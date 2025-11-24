@@ -21,6 +21,8 @@
 #include <QCloseEvent>
 #include <QMessageBox>
 #include <QScrollArea>
+#include <QDirIterator>
+#include <QFile>
 
 FileWatcherApp::FileWatcherApp(QWidget* parent)
     : QMainWindow(parent),
@@ -398,6 +400,11 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
         panel.table->updateFileEntry(filePath, "Modified");
     }
 
+    QString newContent = readFileContent(filePath);
+    if (!newContent.isNull() && panel.table) {
+        panel.table->setFileContent(filePath, newContent);
+    }
+
     m_logDialog->addLog(QString("System %1: File modified - %2").arg(systemIndex + 1).arg(filePath));
 
     if (m_notificationsEnabled && m_telegramService) {
@@ -419,6 +426,11 @@ void FileWatcherApp::handleFileCreated(int systemIndex, const QString& filePath)
     auto& panel = m_systemPanels[systemIndex];
     if (panel.table) {
         panel.table->addFileEntry(filePath, "Created");
+    }
+
+    QString content = readFileContent(filePath);
+    if (!content.isNull() && panel.table) {
+        panel.table->setFileContent(filePath, content);
     }
 
     m_logDialog->addLog(QString("System %1: File created - %2").arg(systemIndex + 1).arg(filePath));
@@ -525,6 +537,84 @@ void FileWatcherApp::showGitPage()
     setMenuActive(m_gitMenuAction);
 }
 
+void FileWatcherApp::captureBaselineForSystem(int systemIndex,
+                                              const SettingsDialog::SystemConfigData& config,
+                                              const QStringList& excludedFolders,
+                                              const QStringList& excludedFiles)
+{
+    if (systemIndex < 0 || systemIndex >= m_systemPanels.size()) {
+        return;
+    }
+    if (config.source.isEmpty()) {
+        return;
+    }
+
+    auto& panel = m_systemPanels[systemIndex];
+    if (!panel.table) {
+        return;
+    }
+
+    QDirIterator it(config.source, QDir::Files | QDir::NoSymLinks | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    int fileCount = 0;
+
+    while (it.hasNext()) {
+        QString path = it.next();
+        if (isPathExcluded(path, excludedFolders, excludedFiles)) {
+            continue;
+        }
+
+        QString content = readFileContent(path);
+        if (!content.isNull()) {
+            panel.table->setFileContent(path, content);
+            ++fileCount;
+        }
+    }
+
+    if (fileCount > 0) {
+        m_logDialog->addLog(QString("System %1: Captured baseline for %2 files").arg(systemIndex + 1).arg(fileCount));
+    }
+}
+
+bool FileWatcherApp::isPathExcluded(const QString& absolutePath,
+                                    const QStringList& excludedFolders,
+                                    const QStringList& excludedFiles) const
+{
+    const QString normalized = QDir::toNativeSeparators(absolutePath);
+
+    for (const QString& folder : excludedFolders) {
+        const QString trimmed = folder.trimmed();
+        if (trimmed.isEmpty()) {
+            continue;
+        }
+        if (normalized.contains(trimmed, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+
+    for (const QString& filePattern : excludedFiles) {
+        const QString trimmed = filePattern.trimmed();
+        if (trimmed.isEmpty()) {
+            continue;
+        }
+        if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+QString FileWatcherApp::readFileContent(const QString& filePath) const
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return QString();
+    }
+    QByteArray data = file.readAll();
+    file.close();
+    return QString::fromUtf8(data);
+}
+
 void FileWatcherApp::onStartWatching()
 {
     bool hasSource = false;
@@ -629,6 +719,8 @@ void FileWatcherApp::startWatching()
 
         QStringList excludedFolders = ruleListForSystem(m_withoutRules, i);
         QStringList excludedFiles = ruleListForSystem(m_exceptRules, i);
+
+        captureBaselineForSystem(i, config, excludedFolders, excludedFiles);
 
         WatcherThread* watcher = new WatcherThread(i, config.source, excludedFolders, excludedFiles);
         panel.watcher = watcher;

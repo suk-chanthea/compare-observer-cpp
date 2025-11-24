@@ -1,6 +1,7 @@
 #include "file_watcher.h"
 #include <QFileInfo>
 #include <QDirIterator>
+#include <QDir>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QCoreApplication>
@@ -27,6 +28,24 @@ WatcherThread::~WatcherThread()
     }
 }
 
+static void addWatchPath(QFileSystemWatcher* watcher, const QString& path)
+{
+    if (!watcher) {
+        return;
+    }
+
+    QFileInfo info(path);
+    if (info.isDir()) {
+        if (!watcher->directories().contains(path)) {
+            watcher->addPath(path);
+        }
+    } else if (info.isFile()) {
+        if (!watcher->files().contains(path)) {
+            watcher->addPath(path);
+        }
+    }
+}
+
 void WatcherThread::run()
 {
     m_running = true;
@@ -40,7 +59,7 @@ void WatcherThread::run()
     emit preloadComplete();
     
     // Watch the root path
-    m_watcher->addPath(m_watchPath);
+    addWatchPath(m_watcher, m_watchPath);
     
     // Connect watcher signals
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this](const QString& path) {
@@ -51,8 +70,19 @@ void WatcherThread::run()
     });
     
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString& path) {
-        if (!isExcluded(path)) {
-            emit logMessage("Directory changed: " + path);
+        if (isExcluded(path)) {
+            return;
+        }
+
+        emit logMessage("Directory changed: " + path);
+
+        // Ensure new files/directories are watched
+        QDir dir(path);
+        const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QFileInfo& info : entries) {
+            if (!isExcluded(info.absoluteFilePath())) {
+                addWatchPath(m_watcher, info.absoluteFilePath());
+            }
         }
     });
     
@@ -76,13 +106,15 @@ void WatcherThread::stop()
 
 void WatcherThread::preloadFileHashes()
 {
-    emit logMessage("Preloading file hashes for table " + QString::number(m_tableIndex));
+    const int systemIndex = m_tableIndex + 1;
+    emit logMessage(QString("Preloading file hashes for system %1").arg(systemIndex));
     
     QDirIterator it(m_watchPath, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+    qint64 fileCount = 0;
     
     while (it.hasNext()) {
         if (!m_running) {
-            emit logMessage("Stopped preloading file hashes");
+            emit logMessage(QString("Stopped preloading file hashes for system %1 after %2 files").arg(systemIndex).arg(fileCount));
             return;
         }
         
@@ -91,13 +123,17 @@ void WatcherThread::preloadFileHashes()
         if (isExcluded(path)) {
             continue;
         }
+
+        addWatchPath(m_watcher, path);
         
         QFileInfo fileInfo(path);
         if (fileInfo.isFile()) {
             calculateFileHash(path);
-            emit logMessage(path);
+            ++fileCount;
         }
     }
+
+    emit logMessage(QString("Captured baseline for %1 file(s) in system %2").arg(fileCount).arg(systemIndex));
 }
 
 void WatcherThread::calculateFileHash(const QString& filePath)

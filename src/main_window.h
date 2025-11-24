@@ -67,6 +67,14 @@ private:
     void stopAllWatchers();
     void showWatcherPage();
     void showGitPage();
+    void captureBaselineForSystem(int systemIndex,
+                                  const SettingsDialog::SystemConfigData& config,
+                                  const QStringList& excludedFolders,
+                                  const QStringList& excludedFiles);
+    bool isPathExcluded(const QString& absolutePath,
+                        const QStringList& excludedFolders,
+                        const QStringList& excludedFiles) const;
+    QString readFileContent(const QString& filePath) const;
 
     // UI Components
     QPushButton* m_watchToggleButton;

@@ -325,3 +325,9 @@ Developed using:
 - Watchdog for file monitoring
 - Python standard library
 
+
+## Build
+```bash
+   cmake --build C:\Users\USER\Documents\chanthea\compare-observer-main\build --config Release
+```
+

@@ -96,12 +96,14 @@ set(HEADERS
     src/ui/models/log_table_model.h
 )
 
-# Create executable
-add_executable(${PROJECT_NAME} 
-    WIN32  # This makes it a GUI app (no console)
-    ${SOURCES}
-    ${HEADERS}
-)
+# Determine if we should create a console or GUI application
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    # Debug: Console application for debugging
+    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+else()
+    # Release: GUI application (no console)
+    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
+endif()
 
 # Link Qt libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
@@ -117,29 +119,21 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# Windows specific settings
-if(WIN32)
-    # Set application icon (if you have one)
-    # set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
-    # target_sources(${PROJECT_NAME} PRIVATE ${APP_ICON_RESOURCE_WINDOWS})
-    
-    # Enable console for debug builds
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set_target_properties(${PROJECT_NAME} PROPERTIES
-            WIN32_EXECUTABLE OFF
-        )
-    endif()
-endif()
-
 # Compiler warnings
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+    target_compile_options(${PROJECT_NAME} PRIVATE 
+        /W4                 # Warning level 4
+        /WX-                # Don't treat warnings as errors
+        /permissive-        # Standards conformance
+        /Zc:__cplusplus     # Enable __cplusplus macro
+    )
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(${PROJECT_NAME} PRIVATE 
+        -Wall -Wextra -Wpedantic
+    )
 endif()
 
-# Post-build: Copy Qt DLLs (handled by windeployqt in build script)
-# Installation rules (optional)
+# Installation rules
 install(TARGETS ${PROJECT_NAME}
     RUNTIME DESTINATION bin
     LIBRARY DESTINATION lib
