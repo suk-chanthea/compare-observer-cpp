@@ -1,12 +1,12 @@
 @echo off
-REM Compare Observer - Build and Run
-REM This script builds the C++ Qt application
+REM Compare Observer - Build and Run (FIXED)
+REM This script builds the C++ Qt application AND deploys Qt DLLs
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo  COMPARE OBSERVER - BUILD & RUN
+echo  COMPARE OBSERVER - BUILD & RUN (FIXED)
 echo ========================================
 echo.
 
@@ -41,6 +41,14 @@ if exist "C:\Qt\6.10.1\msvc2022_64" (
 
 echo Qt path: !QtPath!
 echo.
+
+REM Check if windeployqt exists
+set "WINDEPLOYQT=!QtPath!\bin\windeployqt.exe"
+if not exist "!WINDEPLOYQT!" (
+    echo ERROR: windeployqt.exe not found at !WINDEPLOYQT!
+    pause
+    exit /b 1
+)
 
 REM Initialize Visual Studio environment
 echo Initializing Visual Studio 2026 environment...
@@ -99,20 +107,72 @@ echo  BUILD SUCCESSFUL!
 echo ========================================
 echo.
 
-REM Check Release build
-if exist "Release\CompareObserver.exe" (
-    echo Launching Compare Observer (Release)...
-    timeout /t 2 /nobreak
-    start Release\CompareObserver.exe
-    echo Application started!
+REM Check for executable in bin directory (as per CMakeLists.txt)
+set "EXE_PATH="
+if exist "bin\CompareObserver.exe" (
+    set "EXE_PATH=bin\CompareObserver.exe"
+    echo Found executable at: bin\CompareObserver.exe
+) else if exist "Release\CompareObserver.exe" (
+    set "EXE_PATH=Release\CompareObserver.exe"
+    echo Found executable at: Release\CompareObserver.exe
 ) else (
-    echo ERROR: Executable not found at Release\CompareObserver.exe
+    echo ERROR: Executable not found!
+    echo Searched in:
+    echo   - bin\CompareObserver.exe
+    echo   - Release\CompareObserver.exe
+    dir /s /b CompareObserver.exe
     pause
     exit /b 1
 )
 
+REM Deploy Qt DLLs using windeployqt (CRITICAL FIX!)
+echo.
 echo ========================================
-echo  Done!
+echo  DEPLOYING Qt DLLs...
 echo ========================================
+echo.
+echo Running windeployqt to copy required Qt DLLs...
+"!WINDEPLOYQT!" --release "!EXE_PATH!"
+
+if %errorlevel% neq 0 (
+    echo.
+    echo WARNING: windeployqt failed, but continuing...
+    echo You may need to manually copy Qt DLLs
+)
+
+REM Also copy OpenSSL DLLs if needed
+echo.
+echo Checking for OpenSSL DLLs...
+set "OPENSSL_PATH=C:\Program Files\OpenSSL-Win64\bin"
+if exist "!OPENSSL_PATH!\libssl-3-x64.dll" (
+    echo Copying OpenSSL DLLs...
+    copy "!OPENSSL_PATH!\libssl-3-x64.dll" "bin\" 2>nul
+    copy "!OPENSSL_PATH!\libcrypto-3-x64.dll" "bin\" 2>nul
+) else (
+    echo OpenSSL DLLs not found at !OPENSSL_PATH!
+    echo If the app fails to start, install OpenSSL from:
+    echo https://slproweb.com/products/Win32OpenSSL.html
+)
+
+echo.
+echo ========================================
+echo  LAUNCHING APPLICATION...
+echo ========================================
+echo.
+timeout /t 2 /nobreak
+
+REM Launch the executable
+start "" "!EXE_PATH!"
+
+echo.
+echo ========================================
+echo  Application started!
+echo ========================================
+echo.
+echo If the app doesn't show a window:
+echo 1. Check Windows Event Viewer for errors
+echo 2. Run from command line to see error messages:
+echo    cd build
+echo    !EXE_PATH!
 echo.
 pause
