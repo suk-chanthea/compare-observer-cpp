@@ -1,0 +1,485 @@
+#include "settings_dialog.h"
+#include "ui/styles.h"
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QScrollArea>
+#include <QGroupBox>
+#include <QGridLayout>
+#include <QHeaderView>
+#include <QSpacerItem>
+#include <QNetworkRequest>
+#include <QNetworkReply>
+#include <QEventLoop>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+
+namespace {
+constexpr int kDefaultSystems = 3;
+}
+
+SettingsDialog::SettingsDialog(QWidget* parent)
+    : QDialog(parent)
+    , m_usernameEdit(new QLineEdit())
+    , m_tokenEdit(new QLineEdit())
+    , m_chatIdEdit(new QLineEdit())
+    , m_notificationsCheckbox(new QCheckBox("Enable Telegram Notifications"))
+    , m_systemsContainer(new QWidget())
+    , m_systemsLayout(new QVBoxLayout())
+    , m_withoutTable(new QTableWidget(0, 0))
+    , m_exceptTable(new QTableWidget(0, 0))
+    , m_saveButton(new QPushButton("Save"))
+    , m_cancelButton(new QPushButton("Cancel"))
+{
+    setWindowTitle("Application Settings");
+    setMinimumSize(1000, 720);
+    setStyleSheet(Styles::getDialogStylesheet());
+
+    m_tokenEdit->setEchoMode(QLineEdit::Password);
+
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
+
+    QScrollArea* scrollArea = new QScrollArea(this);
+    scrollArea->setWidgetResizable(true);
+    QWidget* scrollWidget = new QWidget();
+    QVBoxLayout* contentLayout = new QVBoxLayout(scrollWidget);
+    contentLayout->setSpacing(18);
+
+    // User and Telegram section
+    QGroupBox* userGroup = new QGroupBox("User & Telegram");
+    QGridLayout* userLayout = new QGridLayout(userGroup);
+    userLayout->addWidget(new QLabel("Username:"), 0, 0);
+    userLayout->addWidget(m_usernameEdit, 0, 1, 1, 3);
+
+    userLayout->addWidget(new QLabel("Telegram Token:"), 1, 0);
+    userLayout->addWidget(m_tokenEdit, 1, 1);
+    userLayout->addWidget(new QLabel("Telegram Group ID:"), 1, 2);
+    userLayout->addWidget(m_chatIdEdit, 1, 3);
+    userLayout->addWidget(m_notificationsCheckbox, 2, 0, 1, 4);
+    contentLayout->addWidget(userGroup);
+
+    // Systems configuration section
+    QGroupBox* systemsGroup = new QGroupBox("Systems Configuration");
+    QVBoxLayout* systemsGroupLayout = new QVBoxLayout(systemsGroup);
+    QHBoxLayout* systemButtons = new QHBoxLayout();
+    QPushButton* addSystemBtn = new QPushButton("Add System");
+    QPushButton* removeSystemBtn = new QPushButton("Remove Last System");
+    systemButtons->addWidget(addSystemBtn);
+    systemButtons->addWidget(removeSystemBtn);
+    systemButtons->addStretch();
+    systemsGroupLayout->addLayout(systemButtons);
+
+    m_systemsLayout->setSpacing(12);
+    m_systemsContainer->setLayout(m_systemsLayout);
+    systemsGroupLayout->addWidget(m_systemsContainer);
+    contentLayout->addWidget(systemsGroup);
+
+    // Without section
+    QGroupBox* withoutGroup = new QGroupBox("Without");
+    QVBoxLayout* withoutLayout = new QVBoxLayout(withoutGroup);
+    m_withoutTable->setMinimumHeight(240);
+    withoutLayout->addWidget(m_withoutTable);
+    QHBoxLayout* withoutButtons = new QHBoxLayout();
+    QPushButton* withoutDefault = new QPushButton("Default");
+    QPushButton* withoutAdd = new QPushButton("Add");
+    QPushButton* withoutDelete = new QPushButton("Delete");
+    withoutButtons->addWidget(withoutDefault);
+    withoutButtons->addWidget(withoutAdd);
+    withoutButtons->addWidget(withoutDelete);
+    withoutButtons->addStretch();
+    withoutLayout->addLayout(withoutButtons);
+    contentLayout->addWidget(withoutGroup);
+
+    // Except section
+    QGroupBox* exceptGroup = new QGroupBox("Except");
+    QVBoxLayout* exceptLayout = new QVBoxLayout(exceptGroup);
+    m_exceptTable->setMinimumHeight(240);
+    exceptLayout->addWidget(m_exceptTable);
+    QHBoxLayout* exceptButtons = new QHBoxLayout();
+    QPushButton* exceptDefault = new QPushButton("Default");
+    QPushButton* exceptAdd = new QPushButton("Add");
+    QPushButton* exceptDelete = new QPushButton("Delete");
+    exceptButtons->addWidget(exceptDefault);
+    exceptButtons->addWidget(exceptAdd);
+    exceptButtons->addWidget(exceptDelete);
+    exceptButtons->addStretch();
+    exceptLayout->addLayout(exceptButtons);
+    contentLayout->addWidget(exceptGroup);
+    contentLayout->addStretch();
+
+    scrollArea->setWidget(scrollWidget);
+    mainLayout->addWidget(scrollArea);
+
+    // Dialog buttons
+    QHBoxLayout* buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(m_saveButton);
+    buttonLayout->addWidget(m_cancelButton);
+    mainLayout->addLayout(buttonLayout);
+
+    connect(m_saveButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
+    connect(addSystemBtn, &QPushButton::clicked, this, &SettingsDialog::addSystem);
+    connect(removeSystemBtn, &QPushButton::clicked, this, &SettingsDialog::removeSystem);
+    connect(withoutDefault, &QPushButton::clicked, this, &SettingsDialog::loadWithoutDefaults);
+    connect(withoutAdd, &QPushButton::clicked, this, &SettingsDialog::addWithoutRow);
+    connect(withoutDelete, &QPushButton::clicked, this, &SettingsDialog::deleteWithoutRow);
+    connect(exceptDefault, &QPushButton::clicked, this, &SettingsDialog::loadExceptDefaults);
+    connect(exceptAdd, &QPushButton::clicked, this, &SettingsDialog::addExceptRow);
+    connect(exceptDelete, &QPushButton::clicked, this, &SettingsDialog::deleteExceptRow);
+
+    // Initialize defaults
+    setSystemConfigs({});
+    loadWithoutDefaults();
+    loadExceptDefaults();
+}
+
+QString SettingsDialog::getUsername() const
+{
+    return m_usernameEdit->text();
+}
+
+void SettingsDialog::setUsername(const QString& username)
+{
+    m_usernameEdit->setText(username);
+}
+
+QString SettingsDialog::getWatchPath() const
+{
+    if (!m_systemRows.isEmpty()) {
+        return m_systemRows.first().sourceEdit->text();
+    }
+    return {};
+}
+
+QString SettingsDialog::getTelegramToken() const
+{
+    return m_tokenEdit->text();
+}
+
+void SettingsDialog::setTelegramToken(const QString& token)
+{
+    m_tokenEdit->setText(token);
+}
+
+QString SettingsDialog::getTelegramChatId() const
+{
+    return m_chatIdEdit->text();
+}
+
+void SettingsDialog::setTelegramChatId(const QString& id)
+{
+    m_chatIdEdit->setText(id);
+}
+
+bool SettingsDialog::isNotificationsEnabled() const
+{
+    return m_notificationsCheckbox->isChecked();
+}
+
+void SettingsDialog::setNotificationsEnabled(bool enabled)
+{
+    m_notificationsCheckbox->setChecked(enabled);
+}
+
+QVector<SettingsDialog::SystemConfigData> SettingsDialog::systemConfigs() const
+{
+    QVector<SystemConfigData> configs;
+    configs.reserve(m_systemRows.size());
+    for (const auto& row : m_systemRows) {
+        SystemConfigData data;
+        data.source = row.sourceEdit->text();
+        data.destination = row.destinationEdit->text();
+        data.git = row.gitEdit->text();
+        data.backup = row.backupEdit->text();
+        configs.append(data);
+    }
+    return configs;
+}
+
+void SettingsDialog::setSystemConfigs(const QVector<SystemConfigData>& configs)
+{
+    clearSystemRows();
+    int count = configs.isEmpty() ? kDefaultSystems : configs.size();
+    for (int i = 0; i < count; ++i) {
+        SystemConfigData data;
+        if (i < configs.size()) {
+            data = configs.at(i);
+        }
+        createSystemRowWidget(i + 1, data);
+    }
+    refreshSystemTitles();
+    updateTableColumns();
+    ensureTableItems(m_withoutTable);
+    ensureTableItems(m_exceptTable);
+}
+
+QVector<QStringList> SettingsDialog::withoutData() const
+{
+    return collectTableData(m_withoutTable);
+}
+
+void SettingsDialog::setWithoutData(const QVector<QStringList>& rows)
+{
+    applyTableData(m_withoutTable, rows);
+}
+
+QVector<QStringList> SettingsDialog::exceptData() const
+{
+    return collectTableData(m_exceptTable);
+}
+
+void SettingsDialog::setExceptData(const QVector<QStringList>& rows)
+{
+    applyTableData(m_exceptTable, rows);
+}
+
+int SettingsDialog::systemCount() const
+{
+    return m_systemRows.size();
+}
+
+void SettingsDialog::addSystem()
+{
+    createSystemRowWidget(m_systemRows.size() + 1, {});
+    refreshSystemTitles();
+    updateTableColumns();
+    ensureTableItems(m_withoutTable);
+    ensureTableItems(m_exceptTable);
+}
+
+void SettingsDialog::removeSystem()
+{
+    if (m_systemRows.size() <= 1) {
+        return;
+    }
+
+    SystemRowWidgets row = m_systemRows.takeLast();
+    delete row.groupBox;
+    refreshSystemTitles();
+    updateTableColumns();
+    ensureTableItems(m_withoutTable);
+    ensureTableItems(m_exceptTable);
+}
+
+void SettingsDialog::addWithoutRow()
+{
+    int row = m_withoutTable->rowCount();
+    m_withoutTable->insertRow(row);
+    ensureTableItems(m_withoutTable);
+}
+
+void SettingsDialog::deleteWithoutRow()
+{
+    if (m_withoutTable->rowCount() > 0) {
+        m_withoutTable->removeRow(m_withoutTable->rowCount() - 1);
+    }
+}
+
+void SettingsDialog::addExceptRow()
+{
+    int row = m_exceptTable->rowCount();
+    m_exceptTable->insertRow(row);
+    ensureTableItems(m_exceptTable);
+}
+
+void SettingsDialog::deleteExceptRow()
+{
+    if (m_exceptTable->rowCount() > 0) {
+        m_exceptTable->removeRow(m_exceptTable->rowCount() - 1);
+    }
+}
+
+void SettingsDialog::loadWithoutDefaults()
+{
+    const QStringList defaults = {
+        "config",
+        "config/include",
+        "config/include/lang",
+        "config/include/title"
+    };
+    applyTableData(m_withoutTable, QVector<QStringList>(defaults.size(), QStringList()));
+    for (int row = 0; row < defaults.size(); ++row) {
+        for (int col = 0; col < systemCount(); ++col) {
+            m_withoutTable->item(row, col)->setText(defaults[row]);
+        }
+    }
+}
+
+void SettingsDialog::loadExceptDefaults()
+{
+    const QStringList defaults = {
+        "content",
+        ".git",
+        ".idea",
+        "index.php"
+    };
+    applyTableData(m_exceptTable, QVector<QStringList>(defaults.size(), QStringList()));
+    for (int row = 0; row < defaults.size(); ++row) {
+        for (int col = 0; col < systemCount(); ++col) {
+            m_exceptTable->item(row, col)->setText(defaults[row]);
+        }
+    }
+}
+
+void SettingsDialog::createSystemRowWidget(int index, const SystemConfigData& data)
+{
+    SystemRowWidgets row;
+    row.groupBox = new QGroupBox(QString("System %1").arg(index));
+    QGridLayout* grid = new QGridLayout(row.groupBox);
+
+    row.sourceEdit = new QLineEdit(data.source);
+    row.destinationEdit = new QLineEdit(data.destination);
+    row.gitEdit = new QLineEdit(data.git);
+    row.backupEdit = new QLineEdit(data.backup);
+
+    grid->addWidget(new QLabel("Source:"), 0, 0);
+    grid->addWidget(row.sourceEdit, 0, 1);
+    grid->addWidget(new QLabel("Destination:"), 0, 2);
+    grid->addWidget(row.destinationEdit, 0, 3);
+
+    grid->addWidget(new QLabel("Git:"), 1, 0);
+    grid->addWidget(row.gitEdit, 1, 1);
+    grid->addWidget(new QLabel("Backup:"), 1, 2);
+    grid->addWidget(row.backupEdit, 1, 3);
+
+    m_systemRows.append(row);
+    m_systemsLayout->addWidget(row.groupBox);
+}
+
+void SettingsDialog::refreshSystemTitles()
+{
+    for (int i = 0; i < m_systemRows.size(); ++i) {
+        m_systemRows[i].groupBox->setTitle(QString("System %1").arg(i + 1));
+    }
+}
+
+void SettingsDialog::updateTableColumns()
+{
+    QStringList headers;
+    for (int i = 0; i < systemCount(); ++i) {
+        headers << QString("Sys%1").arg(i + 1);
+    }
+    m_withoutTable->setColumnCount(systemCount());
+    m_withoutTable->setHorizontalHeaderLabels(headers);
+    m_withoutTable->horizontalHeader()->setStretchLastSection(true);
+
+    m_exceptTable->setColumnCount(systemCount());
+    m_exceptTable->setHorizontalHeaderLabels(headers);
+    m_exceptTable->horizontalHeader()->setStretchLastSection(true);
+}
+
+void SettingsDialog::ensureTableItems(QTableWidget* table)
+{
+    for (int row = 0; row < table->rowCount(); ++row) {
+        for (int col = 0; col < table->columnCount(); ++col) {
+            if (!table->item(row, col)) {
+                table->setItem(row, col, new QTableWidgetItem());
+            }
+        }
+    }
+}
+
+QVector<QStringList> SettingsDialog::collectTableData(QTableWidget* table) const
+{
+    QVector<QStringList> rows;
+    rows.reserve(table->rowCount());
+    for (int row = 0; row < table->rowCount(); ++row) {
+        QStringList entries;
+        for (int col = 0; col < table->columnCount(); ++col) {
+            QTableWidgetItem* item = table->item(row, col);
+            entries << (item ? item->text() : QString());
+        }
+        rows.append(entries);
+    }
+    return rows;
+}
+
+void SettingsDialog::applyTableData(QTableWidget* table, const QVector<QStringList>& rows)
+{
+    table->setRowCount(rows.size());
+    updateTableColumns();
+    for (int row = 0; row < rows.size(); ++row) {
+        const QStringList& entries = rows[row];
+        for (int col = 0; col < table->columnCount(); ++col) {
+            if (!table->item(row, col)) {
+                table->setItem(row, col, new QTableWidgetItem());
+            }
+            table->item(row, col)->setText(col < entries.size() ? entries[col] : QString());
+        }
+    }
+    ensureTableItems(table);
+}
+
+void SettingsDialog::clearSystemRows()
+{
+    for (auto& row : m_systemRows) {
+        delete row.groupBox;
+    }
+    m_systemRows.clear();
+}
+
+bool SettingsDialog::loadRemoteRuleDefaults()
+{
+    QNetworkRequest request(QUrl("http://khmergaming.436bet.com/app/log_sys.php"));
+    QNetworkReply* reply = m_networkManager.get(request);
+
+    QEventLoop loop;
+    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+    loop.exec();
+
+    QByteArray payload = reply->readAll();
+    QNetworkReply::NetworkError error = reply->error();
+    reply->deleteLater();
+
+    if (error != QNetworkReply::NoError) {
+        return false;
+    }
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+        return false;
+    }
+
+    QJsonObject root = doc.object();
+    bool updated = false;
+
+    if (root.contains("without") && root["without"].isArray()) {
+        QVector<QStringList> rows = rulesFromJson(root["without"].toArray());
+        if (!rows.isEmpty()) {
+            setWithoutData(rows);
+            updated = true;
+        }
+    }
+
+    if (root.contains("except") && root["except"].isArray()) {
+        QVector<QStringList> rows = rulesFromJson(root["except"].toArray());
+        if (!rows.isEmpty()) {
+            setExceptData(rows);
+            updated = true;
+        }
+    }
+
+    return updated;
+}
+
+QVector<QStringList> SettingsDialog::rulesFromJson(const QJsonArray& array) const
+{
+    QVector<QStringList> rows;
+    int cols = qMax(1, systemCount());
+
+    for (const QJsonValue& value : array) {
+        if (!value.isString()) {
+            continue;
+        }
+        QString entry = value.toString();
+        QStringList row;
+        for (int i = 0; i < cols; ++i) {
+            row << entry;
+        }
+        rows.append(row);
+    }
+    return rows;
+}
