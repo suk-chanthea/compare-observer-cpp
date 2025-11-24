@@ -1,95 +1,147 @@
-@echo off
-REM Compare Observer - DEBUG BUILD with Console Output
-REM Use this to see error messages when the window doesn't appear
+cmake_minimum_required(VERSION 3.21)
 
-setlocal enabledelayedexpansion
+project(CompareObserver VERSION 1.0.0 LANGUAGES CXX)
 
-echo.
-echo ========================================
-echo  DEBUG BUILD - Console Mode
-echo ========================================
-echo.
+# C++ Standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-REM Check for Qt installation
-set "QtPath="
-if exist "C:\Qt\6.10.1\msvc2022_64" (
-    set "QtPath=C:\Qt\6.10.1\msvc2022_64"
-) else if exist "C:\Qt\6.10.0\msvc2022_64" (
-    set "QtPath=C:\Qt\6.10.0\msvc2022_64"
-) else (
-    echo ERROR: Qt MSVC not found!
-    pause
-    exit /b 1
+# Qt Configuration
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+
+# Output directories
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+
+# Find Qt6
+find_package(Qt6 REQUIRED COMPONENTS 
+    Core 
+    Gui 
+    Widgets 
+    Network
+    Concurrent
 )
 
-echo Qt path: !QtPath!
-
-REM Initialize Visual Studio
-call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
-
-if %errorlevel% neq 0 (
-    echo ERROR: Failed to initialize Visual Studio
-    pause
-    exit /b 1
+# Source files
+set(SOURCES
+    src/main.cpp
+    src/main_window.cpp
+    src/config.cpp
+    
+    # Core
+    src/core/events.cpp
+    src/core/models.cpp
+    
+    # Services
+    src/services/file_watcher.cpp
+    src/services/telegram_service.cpp
+    
+    # Utils
+    src/utils/helpers.cpp
+    
+    # UI - Styles
+    src/ui/styles.cpp
+    
+    # UI - Dialogs
+    src/ui/dialogs/settings_dialog.cpp
+    src/ui/dialogs/log_dialog.cpp
+    src/ui/dialogs/file_diff_dialog.cpp
+    src/ui/dialogs/git_compare_dialog.cpp
+    src/ui/dialogs/change_review_dialog.cpp
+    src/ui/dialogs/chunk_review_dialog.cpp
+    
+    # UI - Widgets
+    src/ui/widgets/file_watcher_table.cpp
+    src/ui/widgets/custom_text_edit.cpp
+    
+    # UI - Models
+    src/ui/models/log_table_model.cpp
 )
 
-REM Create build_debug directory
-if exist build_debug (
-    rmdir /s /q build_debug
-)
-mkdir build_debug
-cd build_debug
-
-REM Configure with Debug mode and Console enabled
-echo.
-echo Configuring for DEBUG with console output...
-cmake -DCMAKE_PREFIX_PATH="!QtPath!" ^
-      -G "Visual Studio 18 2026" ^
-      -A x64 ^
-      -DCMAKE_BUILD_TYPE=Debug ^
-      ..
-
-if %errorlevel% neq 0 (
-    echo ERROR: CMake configuration failed!
-    pause
-    exit /b 1
-)
-
-REM Modify the project to show console
-echo.
-echo Modifying project for console output...
-powershell -Command "(Get-Content 'CompareObserver.vcxproj') -replace 'WIN32_EXECUTABLE ON', 'WIN32_EXECUTABLE OFF' | Set-Content 'CompareObserver.vcxproj'"
-
-REM Build Debug
-echo.
-echo Building DEBUG version...
-cmake --build . --config Debug
-
-if %errorlevel% neq 0 (
-    echo ERROR: Build failed!
-    pause
-    exit /b 1
+# Header files
+set(HEADERS
+    src/main_window.h
+    src/config.h
+    
+    # Core
+    src/core/events.h
+    src/core/models.h
+    
+    # Services
+    src/services/file_watcher.h
+    src/services/telegram_service.h
+    
+    # Utils
+    src/utils/helpers.h
+    
+    # UI - Styles
+    src/ui/styles.h
+    
+    # UI - Dialogs
+    src/ui/dialogs/settings_dialog.h
+    src/ui/dialogs/log_dialog.h
+    src/ui/dialogs/file_diff_dialog.h
+    src/ui/dialogs/git_compare_dialog.h
+    src/ui/dialogs/change_review_dialog.h
+    src/ui/dialogs/chunk_review_dialog.h
+    
+    # UI - Widgets
+    src/ui/widgets/file_watcher_table.h
+    src/ui/widgets/custom_text_edit.h
+    
+    # UI - Models
+    src/ui/models/log_table_model.h
 )
 
-REM Deploy Qt DLLs
-echo.
-echo Deploying Qt DLLs...
-"!QtPath!\bin\windeployqt.exe" --debug "bin\CompareObserver.exe"
+# Create executable
+add_executable(${PROJECT_NAME} 
+    WIN32  # This makes it a GUI app (no console)
+    ${SOURCES}
+    ${HEADERS}
+)
 
-echo.
-echo ========================================
-echo  DEBUG BUILD COMPLETE!
-echo ========================================
-echo.
-echo Launching with console output...
-echo Any errors will be displayed in this window.
-echo.
-pause
+# Link Qt libraries
+target_link_libraries(${PROJECT_NAME} PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Network
+    Qt6::Concurrent
+)
 
-REM Run with console visible
-cd bin
-CompareObserver.exe
+# Include directories
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+)
 
-echo.
-echo Application closed. Check above for any error messages.
-pause
+# Windows specific settings
+if(WIN32)
+    # Set application icon (if you have one)
+    # set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
+    # target_sources(${PROJECT_NAME} PRIVATE ${APP_ICON_RESOURCE_WINDOWS})
+    
+    # Enable console for debug builds
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            WIN32_EXECUTABLE OFF
+        )
+    endif()
+endif()
+
+# Compiler warnings
+if(MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+else()
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Post-build: Copy Qt DLLs (handled by windeployqt in build script)
+# Installation rules (optional)
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)

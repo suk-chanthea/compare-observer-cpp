@@ -1,16 +1,14 @@
 @echo off
-REM Compare Observer - Build and Run (FIXED)
-REM This script builds the C++ Qt application AND deploys Qt DLLs
-
+REM Compare Observer - Build Script (FIXED)
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo  COMPARE OBSERVER - BUILD & RUN (FIXED)
+echo  COMPARE OBSERVER - BUILD
 echo ========================================
 echo.
 
-REM Check for Qt installation
+REM Step 1: Find Qt installation
 set "QtPath="
 if exist "C:\Qt\6.10.1\msvc2022_64" (
     set "QtPath=C:\Qt\6.10.1\msvc2022_64"
@@ -18,41 +16,51 @@ if exist "C:\Qt\6.10.1\msvc2022_64" (
 ) else if exist "C:\Qt\6.10.0\msvc2022_64" (
     set "QtPath=C:\Qt\6.10.0\msvc2022_64"
     echo Found Qt 6.10.0 MSVC
+) else if exist "C:\Qt\6.9.0\msvc2022_64" (
+    set "QtPath=C:\Qt\6.9.0\msvc2022_64"
+    echo Found Qt 6.9.0 MSVC
 ) else (
-    echo.
-    echo ========================================
-    echo  Qt MSVC NOT FOUND
-    echo ========================================
-    echo.
-    echo You need to install Qt with MSVC 2022 64-bit support.
-    echo.
-    echo Option 1: Use Qt Maintenance Tool
-    echo   Run: C:\Qt\MaintenanceTool.exe
-    echo   Add "MSVC 2022 64-bit" to Qt 6.10.0 or 6.10.1
-    echo   Takes: 10-20 minutes
-    echo.
-    echo Option 2: Download Fresh Qt Installer
-    echo   From: https://www.qt.io/download
-    echo   Install: Qt 6.10.1 with MSVC 2022 64-bit
-    echo.
+    echo ERROR: Qt with MSVC 2022 64-bit not found!
+    echo Please install Qt with MSVC 2022 64-bit support.
     pause
     exit /b 1
 )
 
-echo Qt path: !QtPath!
+echo Qt Path: %QtPath%
 echo.
 
-REM Check if windeployqt exists
-set "WINDEPLOYQT=!QtPath!\bin\windeployqt.exe"
-if not exist "!WINDEPLOYQT!" (
-    echo ERROR: windeployqt.exe not found at !WINDEPLOYQT!
+REM Step 2: Find Visual Studio (2026 or 2022)
+set "VSDIR="
+set "VS_GENERATOR="
+if exist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VSDIR=C:\Program Files\Microsoft Visual Studio\18\Community"
+    set "VS_GENERATOR=Visual Studio 18 2026"
+    echo Found Visual Studio 2026 Community
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Community"
+    set "VS_GENERATOR=Visual Studio 17 2022"
+    echo Found Visual Studio 2022 Community
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Professional"
+    set "VS_GENERATOR=Visual Studio 17 2022"
+    echo Found Visual Studio 2022 Professional
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" (
+    set "VSDIR=C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
+    set "VS_GENERATOR=Visual Studio 17 2022"
+    echo Found Visual Studio 2022 Enterprise
+) else (
+    echo ERROR: Visual Studio not found!
+    echo Please install Visual Studio 2022 or 2026 with C++ Desktop Development workload.
     pause
     exit /b 1
 )
 
-REM Initialize Visual Studio environment
-echo Initializing Visual Studio 2026 environment...
-call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat" x64
+echo Visual Studio: %VSDIR%
+echo.
+
+REM Step 3: Initialize Visual Studio environment
+echo Initializing Visual Studio environment...
+call "%VSDIR%\VC\Auxiliary\Build\vcvarsall.bat" x64
 
 if %errorlevel% neq 0 (
     echo ERROR: Failed to initialize Visual Studio environment
@@ -60,43 +68,47 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-REM Clean old build
-echo Cleaning old build...
+echo Visual Studio environment initialized successfully
+echo.
+
+REM Step 4: Clean old build
 if exist build (
+    echo Cleaning old build directory...
     rmdir /s /q build
 )
 
-REM Create build directory
+REM Step 5: Create build directory
 mkdir build
 cd build
 
-REM Configure with CMake
+REM Step 6: Configure with CMake (using Visual Studio generator)
 echo.
-echo Configuring CMake...
-cmake -DCMAKE_PREFIX_PATH="!QtPath!" -G "Visual Studio 18 2026" -A x64 ..
+echo ========================================
+echo  CONFIGURING CMAKE...
+echo ========================================
+cmake -G "%VS_GENERATOR%" -A x64 -DCMAKE_PREFIX_PATH="%QtPath%" ..
 
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: CMake configuration failed!
     echo.
-    echo Possible causes:
-    echo - Qt MSVC build not found
-    echo - CMake not installed
-    echo - Invalid Qt path
-    echo.
+    cd ..
     pause
     exit /b 1
 )
 
-REM Build
+REM Step 7: Build the project
 echo.
-echo Building project (this may take 2-5 minutes)...
+echo ========================================
+echo  BUILDING PROJECT...
+echo ========================================
 cmake --build . --config Release
 
 if %errorlevel% neq 0 (
     echo.
     echo ERROR: Build failed!
     echo.
+    cd ..
     pause
     exit /b 1
 )
@@ -107,72 +119,65 @@ echo  BUILD SUCCESSFUL!
 echo ========================================
 echo.
 
-REM Check for executable in bin directory (as per CMakeLists.txt)
+REM Step 8: Find the executable
 set "EXE_PATH="
-if exist "bin\CompareObserver.exe" (
+if exist "bin\Release\CompareObserver.exe" (
+    set "EXE_PATH=bin\Release\CompareObserver.exe"
+) else if exist "bin\CompareObserver.exe" (
     set "EXE_PATH=bin\CompareObserver.exe"
-    echo Found executable at: bin\CompareObserver.exe
 ) else if exist "Release\CompareObserver.exe" (
     set "EXE_PATH=Release\CompareObserver.exe"
-    echo Found executable at: Release\CompareObserver.exe
 ) else (
     echo ERROR: Executable not found!
-    echo Searched in:
-    echo   - bin\CompareObserver.exe
-    echo   - Release\CompareObserver.exe
+    echo Searching for it...
     dir /s /b CompareObserver.exe
+    cd ..
     pause
     exit /b 1
 )
 
-REM Deploy Qt DLLs using windeployqt (CRITICAL FIX!)
+echo Found executable: %EXE_PATH%
 echo.
+
+REM Step 9: Deploy Qt DLLs
 echo ========================================
-echo  DEPLOYING Qt DLLs...
+echo  DEPLOYING Qt DLLS...
 echo ========================================
-echo.
-echo Running windeployqt to copy required Qt DLLs...
-"!WINDEPLOYQT!" --release "!EXE_PATH!"
+"%QtPath%\bin\windeployqt.exe" --release "%EXE_PATH%"
 
 if %errorlevel% neq 0 (
-    echo.
     echo WARNING: windeployqt failed, but continuing...
-    echo You may need to manually copy Qt DLLs
 )
 
-REM Also copy OpenSSL DLLs if needed
+REM Step 10: Check for OpenSSL DLLs
 echo.
 echo Checking for OpenSSL DLLs...
 set "OPENSSL_PATH=C:\Program Files\OpenSSL-Win64\bin"
-if exist "!OPENSSL_PATH!\libssl-3-x64.dll" (
+if exist "%OPENSSL_PATH%\libssl-3-x64.dll" (
     echo Copying OpenSSL DLLs...
-    copy "!OPENSSL_PATH!\libssl-3-x64.dll" "bin\" 2>nul
-    copy "!OPENSSL_PATH!\libcrypto-3-x64.dll" "bin\" 2>nul
-) else (
-    echo OpenSSL DLLs not found at !OPENSSL_PATH!
-    echo If the app fails to start, install OpenSSL from:
-    echo https://slproweb.com/products/Win32OpenSSL.html
+    for %%D in (bin bin\Release Release) do (
+        if exist "%%D" (
+            copy "%OPENSSL_PATH%\libssl-3-x64.dll" "%%D\" 2>nul
+            copy "%OPENSSL_PATH%\libcrypto-3-x64.dll" "%%D\" 2>nul
+        )
+    )
 )
 
+REM Step 11: Launch application
 echo.
 echo ========================================
 echo  LAUNCHING APPLICATION...
 echo ========================================
 echo.
-timeout /t 2 /nobreak
 
-REM Launch the executable
-start "" "!EXE_PATH!"
+cd ..
+start "" "build\%EXE_PATH%"
 
+echo Application started successfully!
 echo.
-echo ========================================
-echo  Application started!
-echo ========================================
-echo.
-echo If the app doesn't show a window:
-echo 1. Check Windows Event Viewer for errors
-echo 2. Run from command line to see error messages:
-echo    cd build
-echo    !EXE_PATH!
+echo If you see this message but no window appears:
+echo 1. Check Windows Task Manager for CompareObserver.exe
+echo 2. Run manually: build\%EXE_PATH%
+echo 3. Check Windows Event Viewer for errors
 echo.
 pause
