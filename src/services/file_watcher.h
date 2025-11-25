@@ -5,12 +5,14 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QMap>
 #include <QFileSystemWatcher>
 #include <QMutex>
 
 /**
  * @brief WatcherThread monitors a directory for file changes
+ * 
+ * This class watches for file changes and reports them.
+ * The baseline content is managed by FileWatcherApp, not here.
  */
 class WatcherThread : public QThread {
     Q_OBJECT
@@ -48,15 +50,13 @@ protected:
     void run() override;
 
 private:
-    void preloadFileHashes();
-    void calculateFileHash(const QString& filePath);
+    void addWatchRecursively(const QString& path);
     bool isExcluded(const QString& filePath) const;
 
     int m_tableIndex;
     QString m_watchPath;
     QStringList m_excludedFolders;
     QStringList m_excludedFiles;
-    QMap<QString, QString> m_fileHashes;
     QFileSystemWatcher* m_watcher;
     bool m_running;
     QMutex m_mutex;

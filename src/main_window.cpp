@@ -397,26 +397,55 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
 
     auto& panel = m_systemPanels[systemIndex];
     const QString sourceRoot = m_systemConfigs.value(systemIndex).source;
-    if (panel.table) {
-        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
-        panel.table->updateFileEntry(relative, "Modified");
+    const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+    
+    if (!panel.table) {
+        return;
     }
 
+    // Read NEW content from disk
     QString newContent = readFileContent(filePath);
-    if (!newContent.isNull() && panel.table) {
-        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
-        panel.table->setFileContent(relative, newContent);
+    if (newContent.isNull()) {
+        m_logDialog->addLog(QString("System %1: Failed to read file - %2")
+            .arg(systemIndex + 1).arg(filePath));
+        return;
     }
+    
+    // Get OLD content from baseline (stored when watching started)
+    QString oldContent = panel.table->getFileContent(relative);
+    
+    // CRITICAL: Compare old vs new content
+    if (oldContent == newContent) {
+        // File content hasn't actually changed (maybe just timestamp/attributes)
+        m_logDialog->addLog(QString("System %1: False alarm for %2 (content unchanged)")
+            .arg(systemIndex + 1).arg(relative));
+        return;
+    }
+    
+    // Content has REALLY changed - show in table
+    if (oldContent.isEmpty()) {
+        // No baseline = new file created after watching started
+        panel.table->addFileEntry(relative, "Created");
+        m_logDialog->addLog(QString("System %1: New file created - %2")
+            .arg(systemIndex + 1).arg(relative));
+    } else {
+        // Existing file was modified
+        panel.table->updateFileEntry(relative, "Modified");
+        m_logDialog->addLog(QString("System %1: File modified - %2")
+            .arg(systemIndex + 1).arg(relative));
+    }
+    
+    // Update stored content to new version for next comparison
+    panel.table->setFileContent(relative, newContent);
 
-    m_logDialog->addLog(QString("System %1: File modified - %2").arg(systemIndex + 1).arg(filePath));
-
+    // Send Telegram notification if enabled
     if (m_notificationsEnabled && m_telegramService) {
         QString description = panel.descriptionEdit ? panel.descriptionEdit->text() : QString();
         QString summary = description.isEmpty()
             ? QString("System %1 file modified").arg(systemIndex + 1)
             : description;
         QString fromUser = m_username.isEmpty() ? QString("System %1").arg(systemIndex + 1) : m_username;
-        m_telegramService->sendMessage(fromUser, summary, filePath);
+        m_telegramService->sendMessage(fromUser, summary, relative);
     }
 }
 
