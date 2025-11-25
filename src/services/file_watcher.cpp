@@ -74,14 +74,16 @@ void WatcherThread::run()
             return;
         }
 
-        emit logMessage("Directory changed: " + path);
-
         // Ensure new files/directories are watched
         QDir dir(path);
         const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
         for (const QFileInfo& info : entries) {
             if (!isExcluded(info.absoluteFilePath())) {
                 addWatchPath(m_watcher, info.absoluteFilePath());
+                if (info.isFile()) {
+                    emit fileCreated(info.absoluteFilePath());
+                    calculateFileHash(info.absoluteFilePath());
+                }
             }
         }
     });

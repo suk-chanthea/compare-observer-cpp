@@ -396,13 +396,16 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
     }
 
     auto& panel = m_systemPanels[systemIndex];
+    const QString sourceRoot = m_systemConfigs.value(systemIndex).source;
     if (panel.table) {
-        panel.table->updateFileEntry(filePath, "Modified");
+        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+        panel.table->updateFileEntry(relative, "Modified");
     }
 
     QString newContent = readFileContent(filePath);
     if (!newContent.isNull() && panel.table) {
-        panel.table->setFileContent(filePath, newContent);
+        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+        panel.table->setFileContent(relative, newContent);
     }
 
     m_logDialog->addLog(QString("System %1: File modified - %2").arg(systemIndex + 1).arg(filePath));
@@ -424,13 +427,16 @@ void FileWatcherApp::handleFileCreated(int systemIndex, const QString& filePath)
     }
 
     auto& panel = m_systemPanels[systemIndex];
+    const QString sourceRoot = m_systemConfigs.value(systemIndex).source;
     if (panel.table) {
-        panel.table->addFileEntry(filePath, "Created");
+        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+        panel.table->addFileEntry(relative, "Created");
     }
 
     QString content = readFileContent(filePath);
     if (!content.isNull() && panel.table) {
-        panel.table->setFileContent(filePath, content);
+        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+        panel.table->setFileContent(relative, content);
     }
 
     m_logDialog->addLog(QString("System %1: File created - %2").arg(systemIndex + 1).arg(filePath));
@@ -443,8 +449,10 @@ void FileWatcherApp::handleFileDeleted(int systemIndex, const QString& filePath)
     }
 
     auto& panel = m_systemPanels[systemIndex];
+    const QString sourceRoot = m_systemConfigs.value(systemIndex).source;
     if (panel.table) {
-        panel.table->removeFileEntry(filePath);
+        const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
+        panel.table->removeFileEntry(relative);
     }
 
     m_logDialog->addLog(QString("System %1: File deleted - %2").arg(systemIndex + 1).arg(filePath));
@@ -565,7 +573,8 @@ void FileWatcherApp::captureBaselineForSystem(int systemIndex,
 
         QString content = readFileContent(path);
         if (!content.isNull()) {
-            panel.table->setFileContent(path, content);
+            const QString relative = QDir(config.source).relativeFilePath(path);
+            panel.table->setFileContent(relative, content);
             ++fileCount;
         }
     }
