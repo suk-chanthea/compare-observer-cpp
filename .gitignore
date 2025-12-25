@@ -134,6 +134,8 @@ cython_debug/
 
 # PyCharm
 .idea/
+.qtcreator/
+
 
 # VS Code
 .vscode/
