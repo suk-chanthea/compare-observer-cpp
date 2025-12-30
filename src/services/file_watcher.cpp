@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QCoreApplication>
 #include <QThread>
+#include <QTimer>
 
 WatcherThread::WatcherThread(int tableIndex,
                             const QString& watchPath,
@@ -48,57 +49,111 @@ static void addWatchPath(QFileSystemWatcher* watcher, const QString& path)
 void WatcherThread::run()
 {
     m_running = true;
-    
+
     // Create file system watcher
     m_watcher = new QFileSystemWatcher();
-    
-    // DON'T preload here - baseline is already captured by main_window
+
+    // Signal that baseline should be captured now
     emit preloadComplete();
-    
+
     // Watch the root path and all subdirectories
     addWatchRecursively(m_watchPath);
-    
-    // Connect watcher signals
-    connect(m_watcher, &QFileSystemWatcher::fileChanged, this, [this](const QString& path) {
-        if (!isExcluded(path)) {
-            // Re-add the watch (Qt removes it after change)
+
+    // Use a debounce timer to prevent duplicate events
+    QTimer* debounceTimer = new QTimer();
+    debounceTimer->setInterval(100); // 100ms debounce
+    debounceTimer->setSingleShot(true);
+
+    QMap<QString, qint64> pendingChanges; // file path -> last modified time
+
+    connect(debounceTimer, &QTimer::timeout, this, [this, &pendingChanges]() {
+        // Process all pending changes
+        for (auto it = pendingChanges.begin(); it != pendingChanges.end(); ++it) {
+            const QString& path = it.key();
+
+            // Re-add watch (Qt removes it after change)
             if (QFileInfo::exists(path)) {
+                // Small delay before re-adding to prevent immediate re-trigger
+                QThread::msleep(50);
                 m_watcher->addPath(path);
             }
+
+            // Emit the change
             emit fileChanged(path);
         }
+        pendingChanges.clear();
     });
-    
-    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, [this](const QString& path) {
+
+    // Connect watcher signals
+    connect(m_watcher, &QFileSystemWatcher::fileChanged, this,
+            [this, debounceTimer, &pendingChanges](const QString& path) {
+        if (isExcluded(path)) {
+            return;
+        }
+
+        QFileInfo info(path);
+        if (!info.exists()) {
+            // File was deleted
+            emit fileDeleted(path);
+            return;
+        }
+
+        // Get current modified time
+        qint64 currentModified = info.lastModified().toMSecsSinceEpoch();
+
+        // Check if this is a duplicate event (same file, within debounce window)
+        if (pendingChanges.contains(path)) {
+            qint64 previousModified = pendingChanges[path];
+            if (qAbs(currentModified - previousModified) < 100) {
+                // Duplicate event within 100ms - ignore
+                return;
+            }
+        }
+
+        // Add to pending changes
+        pendingChanges[path] = currentModified;
+
+        // Restart debounce timer
+        debounceTimer->stop();
+        debounceTimer->start();
+    });
+
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this,
+            [this](const QString& path) {
         if (isExcluded(path)) {
             return;
         }
 
         // Scan for new files in changed directory
         QDir dir(path);
-        const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+        const QFileInfoList entries = dir.entryInfoList(
+            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+
         for (const QFileInfo& info : entries) {
             const QString filePath = info.absoluteFilePath();
             if (isExcluded(filePath)) {
                 continue;
             }
-            
-            addWatchPath(m_watcher, filePath);
-            
-            if (info.isFile()) {
-                // Check if this is a new file (not in our baseline)
+
+            // Add watch if not already watching
+            if (info.isFile() && !m_watcher->files().contains(filePath)) {
+                addWatchPath(m_watcher, filePath);
                 emit fileCreated(filePath);
+            } else if (info.isDir() && !m_watcher->directories().contains(filePath)) {
+                addWatchPath(m_watcher, filePath);
             }
         }
     });
-    
+
     emit startedWatching();
-    
+
     // Keep thread alive
     while (m_running) {
         QCoreApplication::processEvents();
         QThread::msleep(300);
     }
+
+    delete debounceTimer;
 }
 
 void WatcherThread::stop()

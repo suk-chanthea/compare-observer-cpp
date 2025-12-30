@@ -403,6 +403,14 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
         return;
     }
 
+    // Check if file still exists
+    QFileInfo fileInfo(filePath);
+    if (!fileInfo.exists()) {
+        m_logDialog->addLog(QString("System %1: File disappeared during change - %2")
+            .arg(systemIndex + 1).arg(relative));
+        return;
+    }
+
     // Read NEW content from disk
     QString newContent = readFileContent(filePath);
     if (newContent.isNull()) {
@@ -410,31 +418,56 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
             .arg(systemIndex + 1).arg(filePath));
         return;
     }
-    
+
     // Get OLD content from baseline (stored when watching started)
     QString oldContent = panel.table->getFileContent(relative);
-    
-    // CRITICAL: Compare old vs new content
-    if (oldContent == newContent) {
-        // File content hasn't actually changed (maybe just timestamp/attributes)
-        m_logDialog->addLog(QString("System %1: False alarm for %2 (content unchanged)")
-            .arg(systemIndex + 1).arg(relative));
-        return;
-    }
-    
-    // Content has REALLY changed - show in table
-    if (oldContent.isEmpty()) {
-        // No baseline = new file created after watching started
+
+    // CRITICAL FIX: Check if we have a baseline for this file
+    bool hasBaseline = !oldContent.isNull();
+
+    if (!hasBaseline) {
+        // This is a newly created file (no baseline exists)
+        panel.table->setFileContent(relative, newContent);
         panel.table->addFileEntry(relative, "Created");
         m_logDialog->addLog(QString("System %1: New file created - %2")
             .arg(systemIndex + 1).arg(relative));
-    } else {
-        // Existing file was modified
-        panel.table->updateFileEntry(relative, "Modified");
-        m_logDialog->addLog(QString("System %1: File modified - %2")
-            .arg(systemIndex + 1).arg(relative));
+
+        // Send Telegram notification if enabled
+        if (m_notificationsEnabled && m_telegramService) {
+            QString description = panel.descriptionEdit ? panel.descriptionEdit->text() : QString();
+            QString summary = description.isEmpty()
+                ? QString("System %1 file created").arg(systemIndex + 1)
+                : description;
+            QString fromUser = m_username.isEmpty() ? QString("System %1").arg(systemIndex + 1) : m_username;
+            m_telegramService->sendMessage(fromUser, summary, relative);
+        }
+        return;
     }
-    
+
+    // CRITICAL: Compare old vs new content byte-by-byte
+    if (oldContent == newContent) {
+        // File content hasn't actually changed (maybe just timestamp/attributes)
+        // This is a false alarm - log but don't show in table
+        m_logDialog->addLog(QString("System %1: Ignored false change for %2 (content identical)")
+            .arg(systemIndex + 1).arg(relative));
+        return;
+    }
+
+    // Content has REALLY changed - calculate change size for logging
+    qint64 oldSize = oldContent.toUtf8().size();
+    qint64 newSize = newContent.toUtf8().size();
+    qint64 sizeDiff = newSize - oldSize;
+    QString sizeInfo = QString("(%1 bytes → %2 bytes, %3%4)")
+        .arg(oldSize)
+        .arg(newSize)
+        .arg(sizeDiff >= 0 ? "+" : "")
+        .arg(sizeDiff);
+
+    // Update table
+    panel.table->updateFileEntry(relative, "Modified");
+    m_logDialog->addLog(QString("System %1: File modified - %2 %3")
+        .arg(systemIndex + 1).arg(relative).arg(sizeInfo));
+
     // Update stored content to new version for next comparison
     panel.table->setFileContent(relative, newContent);
 
@@ -445,7 +478,7 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
             ? QString("System %1 file modified").arg(systemIndex + 1)
             : description;
         QString fromUser = m_username.isEmpty() ? QString("System %1").arg(systemIndex + 1) : m_username;
-        m_telegramService->sendMessage(fromUser, summary, relative);
+        m_telegramService->sendMessage(fromUser, summary, relative + " " + sizeInfo);
     }
 }
 

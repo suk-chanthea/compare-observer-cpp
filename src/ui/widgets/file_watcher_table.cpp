@@ -25,7 +25,8 @@ void FileWatcherTable::addFileEntry(const QString& filePath, const QString& stat
 
     QTableWidgetItem* pathItem = new QTableWidgetItem(filePath);
     QTableWidgetItem* statusItem = new QTableWidgetItem(status);
-    QTableWidgetItem* timeItem = new QTableWidgetItem(QDateTime::currentDateTime().toString());
+    QTableWidgetItem* timeItem = new QTableWidgetItem(
+        QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
 
     setItem(row, 0, pathItem);
     setItem(row, 1, statusItem);
@@ -43,7 +44,7 @@ void FileWatcherTable::updateFileEntry(const QString& filePath, const QString& s
 
     int row = m_fileRowMap[filePath];
     item(row, 1)->setText(status);
-    item(row, 2)->setText(QDateTime::currentDateTime().toString());
+    item(row, 2)->setText(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss"));
 }
 
 void FileWatcherTable::removeFileEntry(const QString& filePath)
@@ -51,14 +52,26 @@ void FileWatcherTable::removeFileEntry(const QString& filePath)
     if (m_fileRowMap.contains(filePath)) {
         int row = m_fileRowMap[filePath];
         removeRow(row);
-        m_fileRowMap.remove(filePath);
+
+        // Rebuild the row map since row indices changed
+        m_fileRowMap.clear();
+        for (int i = 0; i < rowCount(); ++i) {
+            if (item(i, 0)) {
+                m_fileRowMap[item(i, 0)->text()] = i;
+            }
+        }
+
         m_fileContents.remove(filePath);
     }
 }
 
 QString FileWatcherTable::getFileContent(const QString& filePath) const
 {
-    return m_fileContents.value(filePath, "");
+    // Return null QString if no baseline exists (different from empty string "")
+    if (!m_fileContents.contains(filePath)) {
+        return QString(); // null QString indicates "no baseline"
+    }
+    return m_fileContents.value(filePath);
 }
 
 void FileWatcherTable::setFileContent(const QString& filePath, const QString& content)
