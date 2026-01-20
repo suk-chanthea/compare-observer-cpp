@@ -49,7 +49,6 @@ set(SOURCES
     src/ui/dialogs/settings_dialog.cpp
     src/ui/dialogs/log_dialog.cpp
     src/ui/dialogs/file_diff_dialog.cpp
-    src/ui/dialogs/git_compare_dialog.cpp
     src/ui/dialogs/change_review_dialog.cpp
     src/ui/dialogs/chunk_review_dialog.cpp
     
@@ -84,7 +83,6 @@ set(HEADERS
     src/ui/dialogs/settings_dialog.h
     src/ui/dialogs/log_dialog.h
     src/ui/dialogs/file_diff_dialog.h
-    src/ui/dialogs/git_compare_dialog.h
     src/ui/dialogs/change_review_dialog.h
     src/ui/dialogs/chunk_review_dialog.h
     

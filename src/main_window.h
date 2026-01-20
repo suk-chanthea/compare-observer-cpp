@@ -22,7 +22,6 @@ class TelegramService;
 class FileWatcherTable;
 class LogDialog;
 class FileDiffDialog;
-class GitSourceCompareDialog;
 class ChangeReviewDialog;
 
 /**
@@ -64,11 +63,9 @@ private:
     void handleCopyRequested(int systemIndex);
     void handleCopySendRequested(int systemIndex);
     void handleAssignToRequested(int systemIndex);
-    void handleGitCompareRequested(int systemIndex);
     void handleViewDiffRequested(int systemIndex, const QString& filePath);
     void stopAllWatchers();
     void showWatcherPage();
-    void showGitPage();
     void captureBaselineForSystem(int systemIndex,
                                   const SettingsDialog::SystemConfigData& config,
                                   const QStringList& excludedFolders,
@@ -88,16 +85,13 @@ private:
     QVBoxLayout* m_panelLayout;
     QStackedWidget* m_bodyStack;
     QWidget* m_watcherPage;
-    QWidget* m_gitPage;
     QAction* m_watcherMenuAction;
-    QAction* m_gitMenuAction;
     QAction* m_settingsMenuAction;
 
     // Dialogs
     std::unique_ptr<LogDialog> m_logDialog;
     std::unique_ptr<SettingsDialog> m_settingsDialog;
     std::unique_ptr<FileDiffDialog> m_diffDialog;
-    GitSourceCompareDialog* m_gitCompareWidget;
     std::unique_ptr<ChangeReviewDialog> m_changeReviewDialog;
 
     // Services
@@ -111,7 +105,6 @@ private:
         QPushButton* copyButton = nullptr;
         QPushButton* copySendButton = nullptr;
         QPushButton* assignToButton = nullptr;
-        QPushButton* gitCompareButton = nullptr;
         WatcherThread* watcher = nullptr;
     };
 

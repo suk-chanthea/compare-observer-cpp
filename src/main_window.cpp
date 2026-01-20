@@ -4,7 +4,6 @@
 #include "ui/dialogs/log_dialog.h"
 #include "ui/dialogs/settings_dialog.h"
 #include "ui/dialogs/file_diff_dialog.h"
-#include "ui/dialogs/git_compare_dialog.h"
 #include "ui/dialogs/change_review_dialog.h"
 #include "ui/widgets/file_watcher_table.h"
 #include "ui/styles.h"
@@ -37,11 +36,9 @@ FileWatcherApp::FileWatcherApp(QWidget* parent)
       m_panelLayout(nullptr),
       m_bodyStack(nullptr),
       m_watcherPage(nullptr),
-      m_gitPage(nullptr),
       m_logDialog(std::make_unique<LogDialog>(this)),
       m_settingsDialog(std::make_unique<SettingsDialog>(this)),
       m_diffDialog(std::make_unique<FileDiffDialog>(this)),
-      m_gitCompareWidget(nullptr),
       m_changeReviewDialog(std::make_unique<ChangeReviewDialog>(this)),
       m_notificationsEnabled(false),
       m_isWatching(false)
@@ -102,16 +99,6 @@ void FileWatcherApp::setupUI()
     watcherPageLayout->addWidget(scrollArea);
     m_bodyStack->addWidget(m_watcherPage);
 
-    m_gitPage = new QWidget();
-    QVBoxLayout* gitLayout = new QVBoxLayout(m_gitPage);
-    gitLayout->setContentsMargins(0, 0, 0, 0);
-    gitLayout->setSpacing(0);
-    m_gitCompareWidget = new GitSourceCompareDialog(this);
-    m_gitCompareWidget->setWindowFlag(Qt::Dialog, false);
-    m_gitCompareWidget->setModal(false);
-    gitLayout->addWidget(m_gitCompareWidget);
-    m_bodyStack->addWidget(m_gitPage);
-
     showWatcherPage();
     mainLayout->addWidget(m_bodyStack);
 }
@@ -121,11 +108,6 @@ void FileWatcherApp::createMenuBar()
     m_watcherMenuAction = menuBar()->addAction("Watcher");
     connect(m_watcherMenuAction, &QAction::triggered, this, [this]() {
         showWatcherPage();
-    });
-
-    m_gitMenuAction = menuBar()->addAction("Git ↔ Source");
-    connect(m_gitMenuAction, &QAction::triggered, this, [this]() {
-        showGitPage();
     });
 
     QMenu* settingsMenu = menuBar()->addMenu("Settings");
@@ -373,10 +355,6 @@ void FileWatcherApp::buildSystemPanel(int index, const SettingsDialog::SystemCon
     panel.assignToButton = new QPushButton("Assign To");
     panel.assignToButton->setStyleSheet("background-color: #8E44AD; color: white; padding: 8px 16px; border-radius: 4px;");
     buttonsLayout->addWidget(panel.assignToButton);
-
-    panel.gitCompareButton = new QPushButton("Git Compare");
-    panel.gitCompareButton->setStyleSheet("background-color: #F39C12; color: #1E1E1E; padding: 8px 16px; border-radius: 4px;");
-    buttonsLayout->addWidget(panel.gitCompareButton);
     buttonsLayout->addStretch();
 
     tableRow->addLayout(buttonsLayout);
@@ -397,9 +375,6 @@ void FileWatcherApp::buildSystemPanel(int index, const SettingsDialog::SystemCon
     });
     connect(panel.assignToButton, &QPushButton::clicked, this, [this, systemIndex]() {
         handleAssignToRequested(systemIndex);
-    });
-    connect(panel.gitCompareButton, &QPushButton::clicked, this, [this, systemIndex]() {
-        handleGitCompareRequested(systemIndex);
     });
 
     panel.watcher = nullptr;
@@ -1113,15 +1088,6 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     }
 }
 
-void FileWatcherApp::handleGitCompareRequested(int systemIndex)
-{
-    if (systemIndex < 0 || systemIndex >= m_systemPanels.size()) {
-        return;
-    }
-    m_logDialog->addLog(QString("Git compare requested for %1").arg(getSystemName(systemIndex)));
-    showGitPage();
-}
-
 void FileWatcherApp::handleViewDiffRequested(int systemIndex, const QString& filePath)
 {
     if (systemIndex < 0 || systemIndex >= m_systemPanels.size()) {
@@ -1166,7 +1132,7 @@ void FileWatcherApp::handleViewDiffRequested(int systemIndex, const QString& fil
 
 void FileWatcherApp::setMenuActive(QAction* activeAction)
 {
-    QList<QAction*> menuActions = { m_watcherMenuAction, m_gitMenuAction, m_settingsMenuAction };
+    QList<QAction*> menuActions = { m_watcherMenuAction, m_settingsMenuAction };
     for (QAction* action : menuActions) {
         if (!action) {
             continue;
@@ -1200,30 +1166,6 @@ void FileWatcherApp::showWatcherPage()
         m_statusLabel->setVisible(true);
     }
     setMenuActive(m_watcherMenuAction);
-}
-
-void FileWatcherApp::showGitPage()
-{
-    if (m_bodyStack && m_gitPage) {
-        m_bodyStack->setCurrentWidget(m_gitPage);
-    }
-    if (m_titleLabel) {
-        m_titleLabel->setText("Scan Compare Git vs Source");
-    }
-    if (m_watchToggleButton) {
-        m_watchToggleButton->setVisible(false);
-    }
-    if (m_logsButton) {
-        m_logsButton->setVisible(false);
-    }
-    if (m_statusLabel) {
-        m_statusLabel->setVisible(false);
-    }
-    if (m_gitCompareWidget) {
-        m_gitCompareWidget->raise();
-        m_gitCompareWidget->activateWindow();
-    }
-    setMenuActive(m_gitMenuAction);
 }
 
 void FileWatcherApp::captureBaselineForSystem(int systemIndex,
