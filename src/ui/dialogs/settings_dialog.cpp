@@ -407,13 +407,18 @@ void SettingsDialog::updateTableColumns()
         QString name = m_systemRows[i].nameEdit->text();
         headers << (name.isEmpty() ? QString("Sys%1").arg(i + 1) : name);
     }
+    
+    // Configure Without table with equal column widths
     m_withoutTable->setColumnCount(systemCount());
     m_withoutTable->setHorizontalHeaderLabels(headers);
-    m_withoutTable->horizontalHeader()->setStretchLastSection(true);
+    m_withoutTable->horizontalHeader()->setStretchLastSection(false);
+    m_withoutTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 
+    // Configure Except table with equal column widths
     m_exceptTable->setColumnCount(systemCount());
     m_exceptTable->setHorizontalHeaderLabels(headers);
-    m_exceptTable->horizontalHeader()->setStretchLastSection(true);
+    m_exceptTable->horizontalHeader()->setStretchLastSection(false);
+    m_exceptTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
 }
 
 void SettingsDialog::ensureTableItems(QTableWidget* table)

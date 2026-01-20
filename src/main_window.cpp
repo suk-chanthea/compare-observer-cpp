@@ -318,16 +318,17 @@ void FileWatcherApp::buildSystemPanel(int index, const SettingsDialog::SystemCon
     panel.container = new QWidget();
     QVBoxLayout* panelLayout = new QVBoxLayout(panel.container);
     panelLayout->setSpacing(8);
-    panelLayout->setContentsMargins(12, 0, 12, 0);
+    panelLayout->setContentsMargins(12, 12, 12, 12);
 
     QHBoxLayout* descriptionRow = new QHBoxLayout();
     descriptionRow->setSpacing(8);
 
     QString systemName = config.name.isEmpty() ? QString("System %1").arg(index + 1) : config.name;
     QLabel* descriptionLabel = new QLabel(QString("Description for %1:").arg(systemName));
-    descriptionLabel->setStyleSheet("color: #CCCCCC; font-weight: 500;");
+    descriptionLabel->setStyleSheet("color:#CCCCCC; font-weight: 500;");
     panel.descriptionEdit = new QLineEdit();
     panel.descriptionEdit->setPlaceholderText("Enter description here...");
+    panel.descriptionEdit->setStyleSheet("padding:6px 8px;");
     panel.descriptionEdit->setClearButtonEnabled(true);
 
     descriptionRow->addWidget(descriptionLabel);
@@ -338,7 +339,7 @@ void FileWatcherApp::buildSystemPanel(int index, const SettingsDialog::SystemCon
     tableRow->setSpacing(12);
 
     panel.table = new FileWatcherTable();
-    panel.table->setMinimumHeight(160);
+    panel.table->setMinimumHeight(200);
     tableRow->addWidget(panel.table, 1);
 
     QVBoxLayout* buttonsLayout = new QVBoxLayout();
