@@ -228,7 +228,15 @@ bool WatcherThread::isExcluded(const QString& filePath) const
         if (trimmed.isEmpty()) {
             continue;
         }
-        if (normalized.contains(trimmed, Qt::CaseInsensitive)) {
+        
+        // Check if folder appears as a path component (exact folder name match)
+        // Match "\foldername\" anywhere in path OR "\foldername" at end
+        QString sep = QDir::separator();
+        QString folderInPath = sep + trimmed + sep;
+        QString folderAtEnd = sep + trimmed;
+        
+        if (normalized.contains(folderInPath, Qt::CaseInsensitive) ||
+            normalized.endsWith(folderAtEnd, Qt::CaseInsensitive)) {
             return true;
         }
     }
@@ -240,20 +248,25 @@ bool WatcherThread::isExcluded(const QString& filePath) const
             continue;
         }
         
-        // If pattern looks like a folder (starts with . and no extension, or ends with /)
-        // Check if it appears as a path component
-        if (trimmed.startsWith(".") && !trimmed.contains("..", Qt::CaseInsensitive) && 
-            trimmed.lastIndexOf('.') == 0) {
-            // It's a hidden folder like .idea, .git, .vscode
-            QString folderPattern = QDir::separator() + trimmed + QDir::separator();
-            if (normalized.contains(folderPattern, Qt::CaseInsensitive) ||
-                normalized.endsWith(QDir::separator() + trimmed, Qt::CaseInsensitive)) {
+        // Check if it's a folder pattern (doesn't have file extension)
+        bool isFolder = !trimmed.contains('.') || trimmed.startsWith(".");
+        
+        if (isFolder) {
+            // Treat as folder - check as path component
+            // Match "\foldername\" anywhere in path OR "\foldername" at end
+            QString sep = QDir::separator();
+            QString folderInPath = sep + trimmed + sep;
+            QString folderAtEnd = sep + trimmed;
+            
+            if (normalized.contains(folderInPath, Qt::CaseInsensitive) ||
+                normalized.endsWith(folderAtEnd, Qt::CaseInsensitive)) {
                 return true;
             }
-        }
-        // Check if path ends with the file pattern
-        else if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
-            return true;
+        } else {
+            // Treat as file pattern - check if path ends with it
+            if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
+                return true;
+            }
         }
     }
     

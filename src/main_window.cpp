@@ -411,11 +411,26 @@ QStringList FileWatcherApp::ruleListForSystem(const QVector<QStringList>& rows, 
 {
     QStringList values;
     for (const QStringList& row : rows) {
+        QString value;
+        
+        // Try to get value for this system
         if (systemIndex < row.size()) {
-            const QString value = row.at(systemIndex).trimmed();
+            value = row.at(systemIndex).trimmed();
+        }
+        
+        // If empty, fallback to first non-empty value in the row
+        if (value.isEmpty() && !row.isEmpty()) {
+            for (const QString& fallbackValue : row) {
+                QString trimmed = fallbackValue.trimmed();
+                if (!trimmed.isEmpty()) {
+                    value = trimmed;
+                    break;
+                }
+            }
+        }
+        
             if (!value.isEmpty()) {
                 values << value;
-            }
         }
     }
     return values;
@@ -604,19 +619,34 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
         
         bool fileSuccess = true;
         
-        // Copy to destination (flat, except lang folder)
+        // Check if file/folder is in "Without" list for this system
+        bool inWithoutList = false;
+        if (systemIndex < m_withoutRules.size()) {
+            for (const QStringList& row : m_withoutRules) {
+                if (systemIndex < row.size() && !row[systemIndex].isEmpty()) {
+                    QString rule = row[systemIndex].trimmed();
+                    // Check if file path matches the rule (folder or file)
+                    if (relativeFilePath.contains(rule, Qt::CaseInsensitive) ||
+                        relativeFilePath.startsWith(rule + "/", Qt::CaseInsensitive) ||
+                        relativeFilePath.startsWith(rule + "\\", Qt::CaseInsensitive)) {
+                        inWithoutList = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Copy to destination
         if (!config.destination.isEmpty()) {
             QString destPath;
             QString fileName = QFileInfo(relativeFilePath).fileName();
             
-            // Check if file is in lang folder
-            if (relativeFilePath.startsWith("lang/", Qt::CaseInsensitive) || 
-                relativeFilePath.startsWith("lang\\", Qt::CaseInsensitive)) {
-                // Keep folder structure for lang folder
-                destPath = QDir(config.destination).filePath(relativeFilePath);
-            } else {
-                // Flat copy (only filename)
+            if (inWithoutList) {
+                // File is in Without list - remove folder (flat copy)
                 destPath = QDir(config.destination).filePath(fileName);
+            } else {
+                // File is NOT in Without list - keep full path
+                destPath = QDir(config.destination).filePath(relativeFilePath);
             }
             
             QString destDir = QFileInfo(destPath).absolutePath();
@@ -639,6 +669,28 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
             QString gitPath = QDir(config.git).filePath(relativeFilePath);
             QString gitDir = QFileInfo(gitPath).absolutePath();
             
+            // First, backup the OLD file from git to backup (before overwriting)
+            if (!config.backup.isEmpty() && QFile::exists(gitPath)) {
+                QString backupPath = QDir(config.backup).filePath(dateFolder + "/" + timeFolder + "/" + relativeFilePath);
+                QString backupDir = QFileInfo(backupPath).absolutePath();
+                
+                if (!QDir().mkpath(backupDir)) {
+                    m_logDialog->addLog(QString("  ✗ Failed to create backup directory: %1").arg(backupDir));
+                    fileSuccess = false;
+                } else {
+                    if (QFile::exists(backupPath)) {
+                        QFile::remove(backupPath);
+                    }
+                    if (!QFile::copy(gitPath, backupPath)) {
+                        m_logDialog->addLog(QString("  ✗ Failed to backup old git file: %1").arg(backupPath));
+                        fileSuccess = false;
+                    } else {
+                        m_logDialog->addLog(QString("  ✓ Backed up old version from git: %1").arg(relativeFilePath));
+                    }
+                }
+            }
+            
+            // Now update git with the new file
             if (!QDir().mkpath(gitDir)) {
                 m_logDialog->addLog(QString("  ✗ Failed to create git directory: %1").arg(gitDir));
                 fileSuccess = false;
@@ -648,25 +700,6 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
                 }
                 if (!QFile::copy(sourceFile, gitPath)) {
                     m_logDialog->addLog(QString("  ✗ Failed to copy to git: %1").arg(gitPath));
-                    fileSuccess = false;
-                }
-            }
-        }
-        
-        // Copy to backup with date/time folder structure
-        if (!config.backup.isEmpty()) {
-            QString backupPath = QDir(config.backup).filePath(dateFolder + "/" + timeFolder + "/" + relativeFilePath);
-            QString backupDir = QFileInfo(backupPath).absolutePath();
-            
-            if (!QDir().mkpath(backupDir)) {
-                m_logDialog->addLog(QString("  ✗ Failed to create backup directory: %1").arg(backupDir));
-                fileSuccess = false;
-            } else {
-                if (QFile::exists(backupPath)) {
-                    QFile::remove(backupPath);
-                }
-                if (!QFile::copy(sourceFile, backupPath)) {
-                    m_logDialog->addLog(QString("  ✗ Failed to copy to backup: %1").arg(backupPath));
                     fileSuccess = false;
                 }
             }
@@ -742,19 +775,34 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
         
         bool fileSuccess = true;
         
-        // Copy to destination (flat, except lang folder)
+        // Check if file/folder is in "Without" list for this system
+        bool inWithoutList = false;
+        if (systemIndex < m_withoutRules.size()) {
+            for (const QStringList& row : m_withoutRules) {
+                if (systemIndex < row.size() && !row[systemIndex].isEmpty()) {
+                    QString rule = row[systemIndex].trimmed();
+                    // Check if file path matches the rule (folder or file)
+                    if (relativeFilePath.contains(rule, Qt::CaseInsensitive) ||
+                        relativeFilePath.startsWith(rule + "/", Qt::CaseInsensitive) ||
+                        relativeFilePath.startsWith(rule + "\\", Qt::CaseInsensitive)) {
+                        inWithoutList = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Copy to destination
         if (!config.destination.isEmpty()) {
             QString destPath;
             QString fileName = QFileInfo(relativeFilePath).fileName();
             
-            // Check if file is in lang folder
-            if (relativeFilePath.startsWith("lang/", Qt::CaseInsensitive) || 
-                relativeFilePath.startsWith("lang\\", Qt::CaseInsensitive)) {
-                // Keep folder structure for lang folder
-                destPath = QDir(config.destination).filePath(relativeFilePath);
-            } else {
-                // Flat copy (only filename)
+            if (inWithoutList) {
+                // File is in Without list - remove folder (flat copy)
                 destPath = QDir(config.destination).filePath(fileName);
+            } else {
+                // File is NOT in Without list - keep full path
+                destPath = QDir(config.destination).filePath(relativeFilePath);
             }
             
             QString destDir = QFileInfo(destPath).absolutePath();
@@ -777,6 +825,28 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
             QString gitPath = QDir(config.git).filePath(relativeFilePath);
             QString gitDir = QFileInfo(gitPath).absolutePath();
             
+            // First, backup the OLD file from git to backup (before overwriting)
+            if (!config.backup.isEmpty() && QFile::exists(gitPath)) {
+                QString backupPath = QDir(config.backup).filePath(dateFolder + "/" + timeFolder + "/" + relativeFilePath);
+                QString backupDir = QFileInfo(backupPath).absolutePath();
+                
+                if (!QDir().mkpath(backupDir)) {
+                    m_logDialog->addLog(QString("  ✗ Failed to create backup directory: %1").arg(backupDir));
+                    fileSuccess = false;
+                } else {
+                    if (QFile::exists(backupPath)) {
+                        QFile::remove(backupPath);
+                    }
+                    if (!QFile::copy(gitPath, backupPath)) {
+                        m_logDialog->addLog(QString("  ✗ Failed to backup old git file: %1").arg(backupPath));
+                        fileSuccess = false;
+                    } else {
+                        m_logDialog->addLog(QString("  ✓ Backed up old version from git: %1").arg(relativeFilePath));
+                    }
+                }
+            }
+            
+            // Now update git with the new file
             if (!QDir().mkpath(gitDir)) {
                 m_logDialog->addLog(QString("  ✗ Failed to create git directory: %1").arg(gitDir));
                 fileSuccess = false;
@@ -786,25 +856,6 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
                 }
                 if (!QFile::copy(sourceFile, gitPath)) {
                     m_logDialog->addLog(QString("  ✗ Failed to copy to git: %1").arg(gitPath));
-                    fileSuccess = false;
-                }
-            }
-        }
-        
-        // Copy to backup with date/time folder structure
-        if (!config.backup.isEmpty()) {
-            QString backupPath = QDir(config.backup).filePath(dateFolder + "/" + timeFolder + "/" + relativeFilePath);
-            QString backupDir = QFileInfo(backupPath).absolutePath();
-            
-            if (!QDir().mkpath(backupDir)) {
-                m_logDialog->addLog(QString("  ✗ Failed to create backup directory: %1").arg(backupDir));
-                fileSuccess = false;
-            } else {
-                if (QFile::exists(backupPath)) {
-                    QFile::remove(backupPath);
-                }
-                if (!QFile::copy(sourceFile, backupPath)) {
-                    m_logDialog->addLog(QString("  ✗ Failed to copy to backup: %1").arg(backupPath));
                     fileSuccess = false;
                 }
             }
@@ -842,16 +893,31 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
                 description = getSystemName(systemIndex);
             }
             
-            // Format file list: flat for regular files, keep path for lang files
+            // Format file list: check Without list to determine if folder should be removed
             QStringList formattedFiles;
             for (const QString& file : copiedFiles) {
-                if (file.startsWith("lang/", Qt::CaseInsensitive) || 
-                    file.startsWith("lang\\", Qt::CaseInsensitive)) {
-                    // Keep folder structure for lang files
-                    formattedFiles << "- " + file;
-                } else {
-                    // Only filename for regular files
+                // Check if file/folder is in "Without" list for this system
+                bool inWithoutList = false;
+                if (systemIndex < m_withoutRules.size()) {
+                    for (const QStringList& row : m_withoutRules) {
+                        if (systemIndex < row.size() && !row[systemIndex].isEmpty()) {
+                            QString rule = row[systemIndex].trimmed();
+                            if (file.contains(rule, Qt::CaseInsensitive) ||
+                                file.startsWith(rule + "/", Qt::CaseInsensitive) ||
+                                file.startsWith(rule + "\\", Qt::CaseInsensitive)) {
+                                inWithoutList = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (inWithoutList) {
+                    // File is in Without list - show only filename
                     formattedFiles << "- " + QFileInfo(file).fileName();
+                } else {
+                    // File is NOT in Without list - show full path
+                    formattedFiles << "- " + file;
                 }
             }
             
@@ -927,9 +993,9 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     QVBoxLayout* layout = new QVBoxLayout(&dialog);
     
     // Name input
-    layout->addWidget(new QLabel("Folder Name:"));
+    layout->addWidget(new QLabel("Name:"));
     QLineEdit* nameEdit = new QLineEdit(&dialog);
-    nameEdit->setPlaceholderText("Enter folder name...");
+    nameEdit->setPlaceholderText("Enter name...");
     layout->addWidget(nameEdit);
     
     layout->addSpacing(10);
@@ -963,7 +1029,7 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     QString description = descEdit->toPlainText().trimmed();
     
     if (folderName.isEmpty()) {
-        m_logDialog->addLog(QString("%1: Folder name is required").arg(getSystemName(systemIndex)));
+        m_logDialog->addLog(QString("%1: Name is required").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -1232,7 +1298,15 @@ bool FileWatcherApp::isPathExcluded(const QString& absolutePath,
         if (trimmed.isEmpty()) {
             continue;
         }
-        if (normalized.contains(trimmed, Qt::CaseInsensitive)) {
+        
+        // Check if folder appears as a path component (exact name match)
+        // Match "\foldername\" anywhere in path OR "\foldername" at end
+        QString sep = QDir::separator();
+        QString folderInPath = sep + trimmed + sep;
+        QString folderAtEnd = sep + trimmed;
+        
+        if (normalized.contains(folderInPath, Qt::CaseInsensitive) ||
+            normalized.endsWith(folderAtEnd, Qt::CaseInsensitive)) {
             return true;
         }
     }
@@ -1244,20 +1318,25 @@ bool FileWatcherApp::isPathExcluded(const QString& absolutePath,
             continue;
         }
         
-        // If pattern looks like a folder (starts with . and no extension, or ends with /)
-        // Check if it appears as a path component
-        if (trimmed.startsWith(".") && !trimmed.contains("..", Qt::CaseInsensitive) && 
-            trimmed.lastIndexOf('.') == 0) {
-            // It's a hidden folder like .idea, .git, .vscode
-            QString folderPattern = QDir::separator() + trimmed + QDir::separator();
-            if (normalized.contains(folderPattern, Qt::CaseInsensitive) ||
-                normalized.endsWith(QDir::separator() + trimmed, Qt::CaseInsensitive)) {
+        // Check if it's a folder pattern (doesn't have file extension)
+        bool isFolder = !trimmed.contains('.') || trimmed.startsWith(".");
+        
+        if (isFolder) {
+            // Treat as folder - check as path component
+            // Match "\foldername\" anywhere in path OR "\foldername" at end
+            QString sep = QDir::separator();
+            QString folderInPath = sep + trimmed + sep;
+            QString folderAtEnd = sep + trimmed;
+            
+            if (normalized.contains(folderInPath, Qt::CaseInsensitive) ||
+                normalized.endsWith(folderAtEnd, Qt::CaseInsensitive)) {
                 return true;
             }
-        }
-        // Check if path ends with the file pattern
-        else if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
+        } else {
+            // Treat as file pattern - check if path ends with it
+        if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
             return true;
+            }
         }
     }
 
@@ -1411,7 +1490,8 @@ void FileWatcherApp::startWatching()
         }
         panel.table->clearTable();
 
-        QStringList excludedFolders = ruleListForSystem(m_withoutRules, i);
+        // Only use Except table for file exclusion (Without table is only for folder path removal when copying)
+        QStringList excludedFolders;  // Empty - not used for exclusion
         QStringList excludedFiles = ruleListForSystem(m_exceptRules, i);
 
         captureBaselineForSystem(i, config, excludedFolders, excludedFiles);

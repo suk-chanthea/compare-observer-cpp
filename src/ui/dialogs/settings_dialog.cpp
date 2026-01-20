@@ -125,10 +125,20 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     connect(m_cancelButton, &QPushButton::clicked, this, &QDialog::reject);
     connect(addSystemBtn, &QPushButton::clicked, this, &SettingsDialog::addSystem);
     connect(removeSystemBtn, &QPushButton::clicked, this, &SettingsDialog::removeSystem);
-    connect(withoutDefault, &QPushButton::clicked, this, &SettingsDialog::loadWithoutDefaults);
+    connect(withoutDefault, &QPushButton::clicked, this, [this]() {
+        // Try to load from API first, fallback to hardcoded defaults if API fails
+        if (!loadRemoteRuleDefaults()) {
+            loadWithoutDefaults();
+        }
+    });
     connect(withoutAdd, &QPushButton::clicked, this, &SettingsDialog::addWithoutRow);
     connect(withoutDelete, &QPushButton::clicked, this, &SettingsDialog::deleteWithoutRow);
-    connect(exceptDefault, &QPushButton::clicked, this, &SettingsDialog::loadExceptDefaults);
+    connect(exceptDefault, &QPushButton::clicked, this, [this]() {
+        // Try to load from API first, fallback to hardcoded defaults if API fails
+        if (!loadRemoteRuleDefaults()) {
+            loadExceptDefaults();
+        }
+    });
     connect(exceptAdd, &QPushButton::clicked, this, &SettingsDialog::addExceptRow);
     connect(exceptDelete, &QPushButton::clicked, this, &SettingsDialog::deleteExceptRow);
 
@@ -436,17 +446,47 @@ QVector<QStringList> SettingsDialog::collectTableData(QTableWidget* table) const
 
 void SettingsDialog::applyTableData(QTableWidget* table, const QVector<QStringList>& rows)
 {
-    table->setRowCount(rows.size());
+    // Update column count first to match system count
     updateTableColumns();
+    
+    // Set row count
+    table->setRowCount(rows.size());
+    
+    // Ensure ALL cells exist and are editable
     for (int row = 0; row < rows.size(); ++row) {
-        const QStringList& entries = rows[row];
         for (int col = 0; col < table->columnCount(); ++col) {
             if (!table->item(row, col)) {
-                table->setItem(row, col, new QTableWidgetItem());
+                QTableWidgetItem* item = new QTableWidgetItem();
+                item->setFlags(item->flags() | Qt::ItemIsEditable);
+                table->setItem(row, col, item);
             }
-            table->item(row, col)->setText(col < entries.size() ? entries[col] : QString());
         }
     }
+    
+    // Now fill in the data - EXPLICITLY for ALL columns
+    for (int row = 0; row < rows.size(); ++row) {
+        const QStringList& entries = rows[row];
+        
+        // Determine the value to use (first entry in the row)
+        QString defaultValue = entries.isEmpty() ? QString() : entries[0];
+        
+        // Apply to EVERY column
+        for (int col = 0; col < table->columnCount(); ++col) {
+            QString value;
+            if (col < entries.size() && !entries[col].isEmpty()) {
+                // Use the specific value for this column if it exists
+                value = entries[col];
+            } else {
+                // Otherwise use the default (first) value
+                value = defaultValue;
+            }
+            
+            if (table->item(row, col)) {
+                table->item(row, col)->setText(value);
+            }
+        }
+    }
+    
     ensureTableItems(table);
 }
 
@@ -485,19 +525,60 @@ bool SettingsDialog::loadRemoteRuleDefaults()
     bool updated = false;
 
     if (root.contains("without") && root["without"].isArray()) {
+        // Clear existing data first to ensure fresh data from API
+        m_withoutTable->setRowCount(0);
+        m_withoutTable->clearContents();
+        
         QVector<QStringList> rows = rulesFromJson(root["without"].toArray());
         if (!rows.isEmpty()) {
+            // Debug: Verify each row has data for all columns
+            QString debugInfo = QString("API returned %1 rows for %2 systems:\n").arg(rows.size()).arg(systemCount());
+            for (int i = 0; i < qMin(3, rows.size()); ++i) {
+                debugInfo += QString("Row %1: [").arg(i);
+                for (int j = 0; j < rows[i].size(); ++j) {
+                    debugInfo += QString("\"%1\"").arg(rows[i][j]);
+                    if (j < rows[i].size() - 1) debugInfo += ", ";
+                }
+                debugInfo += "]\n";
+            }
+            
             setWithoutData(rows);
             updated = true;
+            
+            // Debug: Show success message with data structure
+            QMessageBox::information(this, "API Success - Without", debugInfo);
         }
     }
 
     if (root.contains("except") && root["except"].isArray()) {
+        // Clear existing data first to ensure fresh data from API
+        m_exceptTable->setRowCount(0);
+        m_exceptTable->clearContents();
+        
         QVector<QStringList> rows = rulesFromJson(root["except"].toArray());
         if (!rows.isEmpty()) {
+            // Debug: Verify each row has data for all columns
+            QString debugInfo = QString("API returned %1 rows for %2 systems:\n").arg(rows.size()).arg(systemCount());
+            for (int i = 0; i < qMin(3, rows.size()); ++i) {
+                debugInfo += QString("Row %1: [").arg(i);
+                for (int j = 0; j < rows[i].size(); ++j) {
+                    debugInfo += QString("\"%1\"").arg(rows[i][j]);
+                    if (j < rows[i].size() - 1) debugInfo += ", ";
+                }
+                debugInfo += "]\n";
+            }
+            
             setExceptData(rows);
             updated = true;
+            
+            // Debug: Show success message with data structure
+            QMessageBox::information(this, "API Success - Except", debugInfo);
         }
+    }
+    
+    if (!updated) {
+        QMessageBox::warning(this, "API Failed", 
+            "Failed to load rules from API. Using local defaults instead.");
     }
 
     return updated;
@@ -514,9 +595,9 @@ QVector<QStringList> SettingsDialog::rulesFromJson(const QJsonArray& array) cons
         }
         QString entry = value.toString();
         QStringList row;
-        // Apply default to first system only, leave others empty for independent customization
+        // Apply the same default rule to all systems
         for (int i = 0; i < cols; ++i) {
-            row << (i == 0 ? entry : QString());
+            row << entry;
         }
         rows.append(row);
     }
