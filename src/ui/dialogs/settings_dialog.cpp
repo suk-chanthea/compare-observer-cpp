@@ -14,6 +14,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QInputDialog>
+#include <QMessageBox>
 
 namespace {
 constexpr int kDefaultSystems = 3;
@@ -189,10 +191,12 @@ QVector<SettingsDialog::SystemConfigData> SettingsDialog::systemConfigs() const
     configs.reserve(m_systemRows.size());
     for (const auto& row : m_systemRows) {
         SystemConfigData data;
+        data.name = row.nameEdit->text();
         data.source = row.sourceEdit->text();
         data.destination = row.destinationEdit->text();
         data.git = row.gitEdit->text();
         data.backup = row.backupEdit->text();
+        data.assign = row.assignEdit->text();
         configs.append(data);
     }
     return configs;
@@ -242,11 +246,23 @@ int SettingsDialog::systemCount() const
 
 void SettingsDialog::addSystem()
 {
-    createSystemRowWidget(m_systemRows.size() + 1, {});
-    refreshSystemTitles();
-    updateTableColumns();
-    ensureTableItems(m_withoutTable);
-    ensureTableItems(m_exceptTable);
+    bool ok;
+    QString systemName = QInputDialog::getText(this, 
+                                               "Add System",
+                                               "Enter system name:",
+                                               QLineEdit::Normal,
+                                               QString("System %1").arg(m_systemRows.size() + 1),
+                                               &ok);
+    
+    if (ok && !systemName.isEmpty()) {
+        SystemConfigData data;
+        data.name = systemName;
+        createSystemRowWidget(m_systemRows.size() + 1, data);
+        refreshSystemTitles();
+        updateTableColumns();
+        ensureTableItems(m_withoutTable);
+        ensureTableItems(m_exceptTable);
+    }
 }
 
 void SettingsDialog::removeSystem()
@@ -326,23 +342,39 @@ void SettingsDialog::loadExceptDefaults()
 void SettingsDialog::createSystemRowWidget(int index, const SystemConfigData& data)
 {
     SystemRowWidgets row;
-    row.groupBox = new QGroupBox(QString("System %1").arg(index));
+    
+    // Use custom name if provided, otherwise default to "System X"
+    QString groupTitle = data.name.isEmpty() ? QString("System %1").arg(index) : data.name;
+    row.groupBox = new QGroupBox(groupTitle);
     QGridLayout* grid = new QGridLayout(row.groupBox);
 
+    row.nameEdit = new QLineEdit(data.name.isEmpty() ? QString("System %1").arg(index) : data.name);
     row.sourceEdit = new QLineEdit(data.source);
     row.destinationEdit = new QLineEdit(data.destination);
     row.gitEdit = new QLineEdit(data.git);
     row.backupEdit = new QLineEdit(data.backup);
+    row.assignEdit = new QLineEdit(data.assign);
 
-    grid->addWidget(new QLabel("Source:"), 0, 0);
-    grid->addWidget(row.sourceEdit, 0, 1);
-    grid->addWidget(new QLabel("Destination:"), 0, 2);
-    grid->addWidget(row.destinationEdit, 0, 3);
+    // Connect name edit to update group box title and table headers
+    connect(row.nameEdit, &QLineEdit::textChanged, this, [this, groupBox = row.groupBox](const QString& text) {
+        groupBox->setTitle(text.isEmpty() ? "Unnamed System" : text);
+        updateTableColumns();  // Update Without/Except table headers
+    });
 
-    grid->addWidget(new QLabel("Git:"), 1, 0);
-    grid->addWidget(row.gitEdit, 1, 1);
-    grid->addWidget(new QLabel("Backup:"), 1, 2);
-    grid->addWidget(row.backupEdit, 1, 3);
+    grid->addWidget(new QLabel("Name:"), 0, 0);
+    grid->addWidget(row.nameEdit, 0, 1);
+    grid->addWidget(new QLabel("Source:"), 0, 2);
+    grid->addWidget(row.sourceEdit, 0, 3);
+
+    grid->addWidget(new QLabel("Destination:"), 1, 0);
+    grid->addWidget(row.destinationEdit, 1, 1);
+    grid->addWidget(new QLabel("Git:"), 1, 2);
+    grid->addWidget(row.gitEdit, 1, 3);
+
+    grid->addWidget(new QLabel("Backup:"), 2, 0);
+    grid->addWidget(row.backupEdit, 2, 1);
+    grid->addWidget(new QLabel("Assign:"), 2, 2);
+    grid->addWidget(row.assignEdit, 2, 3);
 
     m_systemRows.append(row);
     m_systemsLayout->addWidget(row.groupBox);
@@ -351,7 +383,8 @@ void SettingsDialog::createSystemRowWidget(int index, const SystemConfigData& da
 void SettingsDialog::refreshSystemTitles()
 {
     for (int i = 0; i < m_systemRows.size(); ++i) {
-        m_systemRows[i].groupBox->setTitle(QString("System %1").arg(i + 1));
+        QString name = m_systemRows[i].nameEdit->text();
+        m_systemRows[i].groupBox->setTitle(name.isEmpty() ? QString("System %1").arg(i + 1) : name);
     }
 }
 
@@ -359,7 +392,9 @@ void SettingsDialog::updateTableColumns()
 {
     QStringList headers;
     for (int i = 0; i < systemCount(); ++i) {
-        headers << QString("Sys%1").arg(i + 1);
+        // Use the actual system name if available, otherwise default to "Sys X"
+        QString name = m_systemRows[i].nameEdit->text();
+        headers << (name.isEmpty() ? QString("Sys%1").arg(i + 1) : name);
     }
     m_withoutTable->setColumnCount(systemCount());
     m_withoutTable->setHorizontalHeaderLabels(headers);

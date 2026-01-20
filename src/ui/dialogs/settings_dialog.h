@@ -20,10 +20,12 @@ class SettingsDialog : public QDialog {
 
 public:
     struct SystemConfigData {
+        QString name;
         QString source;
         QString destination;
         QString git;
         QString backup;
+        QString assign;
     };
 
     explicit SettingsDialog(QWidget* parent = nullptr);
@@ -80,10 +82,12 @@ private slots:
 private:
     struct SystemRowWidgets {
         QGroupBox* groupBox;
+        QLineEdit* nameEdit;
         QLineEdit* sourceEdit;
         QLineEdit* destinationEdit;
         QLineEdit* gitEdit;
         QLineEdit* backupEdit;
+        QLineEdit* assignEdit;
     };
 
     void createSystemRowWidget(int index, const SystemConfigData& data);

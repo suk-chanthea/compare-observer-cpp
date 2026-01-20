@@ -44,7 +44,24 @@ public:
      */
     void clearTable();
 
+    /**
+     * @brief Gets all file keys (relative paths) from the table
+     */
+    QStringList getAllFileKeys() const;
+
+signals:
+    /**
+     * @brief Emitted when user wants to view file diff
+     */
+    void viewDiffRequested(const QString& filePath);
+
+private slots:
+    void onCellClicked(int row, int column);
+    void onDeleteClicked(int row);
+
 private:
+    void addDeleteButton(int row);
+
     QMap<QString, QString> m_fileContents;
     QMap<QString, int> m_fileRowMap;
 };

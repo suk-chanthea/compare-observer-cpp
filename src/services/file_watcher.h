@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QFileSystemWatcher>
 #include <QMutex>
+#include <QMap>
 
 /**
  * @brief WatcherThread monitors a directory for file changes
@@ -60,6 +61,7 @@ private:
     QFileSystemWatcher* m_watcher;
     bool m_running;
     QMutex m_mutex;
+    QMap<QString, qint64> m_lastChangeTime;
 };
 
 #endif // FILE_WATCHER_H

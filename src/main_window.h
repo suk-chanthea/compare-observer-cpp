@@ -63,7 +63,9 @@ private:
     void handleFileDeleted(int systemIndex, const QString& filePath);
     void handleCopyRequested(int systemIndex);
     void handleCopySendRequested(int systemIndex);
+    void handleAssignToRequested(int systemIndex);
     void handleGitCompareRequested(int systemIndex);
+    void handleViewDiffRequested(int systemIndex, const QString& filePath);
     void stopAllWatchers();
     void showWatcherPage();
     void showGitPage();
@@ -107,6 +109,7 @@ private:
         FileWatcherTable* table = nullptr;
         QPushButton* copyButton = nullptr;
         QPushButton* copySendButton = nullptr;
+        QPushButton* assignToButton = nullptr;
         QPushButton* gitCompareButton = nullptr;
         WatcherThread* watcher = nullptr;
     };
