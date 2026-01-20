@@ -4,6 +4,8 @@
 #include <QString>
 #include <QObject>
 
+class QNetworkAccessManager;
+
 /**
  * @brief TelegramService handles sending notifications to Telegram
  */
@@ -37,6 +39,7 @@ private:
     QString m_token;
     QString m_chatId;
     QString m_url;
+    QNetworkAccessManager* m_manager;
 };
 
 #endif // TELEGRAM_SERVICE_H

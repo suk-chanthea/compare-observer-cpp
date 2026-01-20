@@ -94,7 +94,7 @@ void WatcherThread::run()
         // Emit the change signal
         emit fileChanged(path);
         emit logMessage(QString("Change detected: %1").arg(path));
-    }, Qt::DirectConnection);
+    }, Qt::QueuedConnection);
 
     // Connect directory change signal  
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this,

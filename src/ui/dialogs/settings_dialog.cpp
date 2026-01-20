@@ -1,5 +1,6 @@
 #include "settings_dialog.h"
 #include "ui/styles.h"
+#include "config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -410,7 +411,9 @@ void SettingsDialog::ensureTableItems(QTableWidget* table)
     for (int row = 0; row < table->rowCount(); ++row) {
         for (int col = 0; col < table->columnCount(); ++col) {
             if (!table->item(row, col)) {
-                table->setItem(row, col, new QTableWidgetItem());
+                QTableWidgetItem* item = new QTableWidgetItem();
+                item->setFlags(item->flags() | Qt::ItemIsEditable);
+                table->setItem(row, col, item);
             }
         }
     }
@@ -457,7 +460,7 @@ void SettingsDialog::clearSystemRows()
 
 bool SettingsDialog::loadRemoteRuleDefaults()
 {
-    QNetworkRequest request(QUrl("http://khmergaming.436bet.com/app/log_sys.php"));
+    QNetworkRequest request(QUrl(QString(Config::API_URL) + "log_sys.php"));
     QNetworkReply* reply = m_networkManager.get(request);
 
     QEventLoop loop;
@@ -511,8 +514,9 @@ QVector<QStringList> SettingsDialog::rulesFromJson(const QJsonArray& array) cons
         }
         QString entry = value.toString();
         QStringList row;
+        // Apply default to first system only, leave others empty for independent customization
         for (int i = 0; i < cols; ++i) {
-            row << entry;
+            row << (i == 0 ? entry : QString());
         }
         rows.append(row);
     }

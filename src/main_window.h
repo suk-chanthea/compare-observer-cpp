@@ -77,6 +77,7 @@ private:
                         const QStringList& excludedFolders,
                         const QStringList& excludedFiles) const;
     QString readFileContent(const QString& filePath) const;
+    QString getSystemName(int systemIndex) const;
 
     // UI Components
     QPushButton* m_watchToggleButton;

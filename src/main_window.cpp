@@ -232,6 +232,27 @@ void FileWatcherApp::loadSettings()
         m_exceptRules = m_settingsDialog->exceptData();
     }
 
+    // Initialize Telegram service if enabled and configured
+    if (m_notificationsEnabled && !m_telegramToken.isEmpty() && !m_telegramChatId.isEmpty()) {
+        m_telegramService = std::make_unique<TelegramService>(m_telegramToken, m_telegramChatId);
+        
+        // Connect to error signal to show Telegram errors in logs
+        connect(m_telegramService.get(), &TelegramService::error, this, [this](const QString& errorMsg) {
+            m_logDialog->addLog("❌ Telegram Error: " + errorMsg);
+        });
+        
+        // Connect to success signal
+        connect(m_telegramService.get(), &TelegramService::messageSent, this, [this](bool success) {
+            if (success) {
+                m_logDialog->addLog("✅ Telegram message delivered successfully!");
+            }
+        });
+        
+        m_logDialog->addLog("✅ Telegram service initialized on startup");
+    } else {
+        m_logDialog->addLog("ℹ️ Telegram service not initialized (enable in Settings)");
+    }
+
     rebuildSystemPanels();
 }
 
@@ -405,9 +426,9 @@ void FileWatcherApp::stopAllWatchers()
     for (int i = 0; i < m_systemPanels.size(); ++i) {
         auto& panel = m_systemPanels[i];
         if (panel.watcher) {
-            m_logDialog->addLog(QString("Stopping system %1 watcher...").arg(i + 1));
+            m_logDialog->addLog(QString("Stopping %1 watcher...").arg(getSystemName(i)));
             panel.watcher->stop();
-            m_logDialog->addLog(QString("System %1 watcher stopped").arg(i + 1));
+            m_logDialog->addLog(QString("%1 watcher stopped").arg(getSystemName(i)));
             panel.watcher->deleteLater();
             panel.watcher = nullptr;
         }
@@ -424,6 +445,8 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
     const QString sourceRoot = m_systemConfigs.value(systemIndex).source;
     const QString relative = QDir(sourceRoot).relativeFilePath(filePath);
     
+    m_logDialog->addLog(QString("%1: Processing change event for %2").arg(getSystemName(systemIndex)).arg(relative));
+    
     if (!panel.table) {
         return;
     }
@@ -431,16 +454,16 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
     // Check if file still exists
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists()) {
-        m_logDialog->addLog(QString("System %1: File disappeared during change - %2")
-            .arg(systemIndex + 1).arg(relative));
+        m_logDialog->addLog(QString("%1: File disappeared during change - %2")
+            .arg(getSystemName(systemIndex)).arg(relative));
         return;
     }
 
     // Read NEW content from disk
     QString newContent = readFileContent(filePath);
     if (newContent.isNull()) {
-        m_logDialog->addLog(QString("System %1: Failed to read file - %2")
-            .arg(systemIndex + 1).arg(filePath));
+        m_logDialog->addLog(QString("%1: Failed to read file - %2")
+            .arg(getSystemName(systemIndex)).arg(filePath));
         return;
     }
 
@@ -454,8 +477,8 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
         // This is a newly created file (no baseline exists)
         panel.table->setFileContent(relative, newContent);
         panel.table->addFileEntry(relative, "Created");
-        m_logDialog->addLog(QString("System %1: New file created - %2")
-            .arg(systemIndex + 1).arg(relative));
+        m_logDialog->addLog(QString("%1: New file created - %2")
+            .arg(getSystemName(systemIndex)).arg(relative));
 
         // Automatic Telegram notification removed - only send via "Copy Send" button
         return;
@@ -465,8 +488,8 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
     if (oldContent == newContent) {
         // File content hasn't actually changed (maybe just timestamp/attributes)
         // This is a false alarm - log but don't show in table
-        m_logDialog->addLog(QString("System %1: Ignored false change for %2 (content identical)")
-            .arg(systemIndex + 1).arg(relative));
+        m_logDialog->addLog(QString("%1: Ignored false change for %2 (content identical)")
+            .arg(getSystemName(systemIndex)).arg(relative));
         return;
     }
 
@@ -482,8 +505,8 @@ void FileWatcherApp::handleFileChanged(int systemIndex, const QString& filePath)
 
     // Update table
     panel.table->updateFileEntry(relative, "Modified");
-    m_logDialog->addLog(QString("System %1: File modified - %2 %3")
-        .arg(systemIndex + 1).arg(relative).arg(sizeInfo));
+    m_logDialog->addLog(QString("%1: File modified - %2 %3")
+        .arg(getSystemName(systemIndex)).arg(relative).arg(sizeInfo));
 
     // DO NOT update baseline - keep original content for comparison
     // panel.table->setFileContent(relative, newContent);
@@ -510,7 +533,7 @@ void FileWatcherApp::handleFileCreated(int systemIndex, const QString& filePath)
         panel.table->setFileContent(relative, content);
     }
 
-    m_logDialog->addLog(QString("System %1: File created - %2").arg(systemIndex + 1).arg(filePath));
+    m_logDialog->addLog(QString("%1: File created - %2").arg(getSystemName(systemIndex)).arg(filePath));
 }
 
 void FileWatcherApp::handleFileDeleted(int systemIndex, const QString& filePath)
@@ -526,7 +549,7 @@ void FileWatcherApp::handleFileDeleted(int systemIndex, const QString& filePath)
         panel.table->removeFileEntry(relative);
     }
 
-    m_logDialog->addLog(QString("System %1: File deleted - %2").arg(systemIndex + 1).arg(filePath));
+    m_logDialog->addLog(QString("%1: File deleted - %2").arg(getSystemName(systemIndex)).arg(filePath));
 }
 
 void FileWatcherApp::handleCopyRequested(int systemIndex)
@@ -536,7 +559,7 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
     }
     
     if (systemIndex >= m_systemConfigs.size()) {
-        m_logDialog->addLog(QString("Error: Invalid system configuration for system %1").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("Error: Invalid system configuration for %1").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -548,38 +571,19 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
     
     if (filesToCopy.isEmpty()) {
         QMessageBox::warning(this, "No Files", 
-                            QString("System %1: No files in watcher list to copy.").arg(systemIndex + 1));
+                            QString("%1: No files in watcher list to copy.").arg(getSystemName(systemIndex)));
         return;
     }
     
-    // Check if at least one destination path is configured
-    QStringList missingPaths;
-    if (!config.destination.isEmpty() && !QDir(config.destination).exists()) {
-        missingPaths << QString("Destination: %1").arg(config.destination);
-    }
-    if (!config.git.isEmpty() && !QDir(config.git).exists()) {
-        missingPaths << QString("Git: %1").arg(config.git);
-    }
-    if (!config.backup.isEmpty() && !QDir(config.backup).exists()) {
-        missingPaths << QString("Backup: %1").arg(config.backup);
-    }
-    
-    if (!missingPaths.isEmpty()) {
-        QMessageBox::warning(this, "Path Not Found", 
-                            QString("System %1: The following paths do not exist:\n\n%2\n\nPlease create them or update the paths in Settings.")
-                            .arg(systemIndex + 1)
-                            .arg(missingPaths.join("\n")));
-        return;
-    }
-    
+    // Check if at least one destination path is configured (folders will be created automatically)
     if (config.destination.isEmpty() && config.git.isEmpty() && config.backup.isEmpty()) {
         QMessageBox::warning(this, "No Paths Configured", 
-                            QString("System %1: No destination paths configured.\n\nPlease configure at least one path (Destination, Git, or Backup) in Settings.")
-                            .arg(systemIndex + 1));
+                            QString("%1: No destination paths configured.\n\nPlease configure at least one path (Destination, Git, or Backup) in Settings.")
+                            .arg(getSystemName(systemIndex)));
         return;
     }
     
-    m_logDialog->addLog(QString("System %1: Starting copy of %2 file(s)...").arg(systemIndex + 1).arg(filesToCopy.size()));
+    m_logDialog->addLog(QString("%1: Starting copy of %2 file(s)...").arg(getSystemName(systemIndex)).arg(filesToCopy.size()));
     
     int successCount = 0;
     int failCount = 0;
@@ -675,13 +679,13 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
         }
     }
     
-    m_logDialog->addLog(QString("System %1: Copy complete - %2 succeeded, %3 failed")
-                        .arg(systemIndex + 1).arg(successCount).arg(failCount));
+    m_logDialog->addLog(QString("%1: Copy complete - %2 succeeded, %3 failed")
+                        .arg(getSystemName(systemIndex)).arg(successCount).arg(failCount));
     
     // Clear the watcher table after successful copy
     if (successCount > 0) {
         panel.table->clearTable();
-        m_logDialog->addLog(QString("System %1: Watcher list cleared").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
     }
 }
 
@@ -692,7 +696,7 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
     }
     
     if (systemIndex >= m_systemConfigs.size()) {
-        m_logDialog->addLog(QString("Error: Invalid system configuration for system %1").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("Error: Invalid system configuration for %1").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -704,38 +708,19 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
     
     if (filesToCopy.isEmpty()) {
         QMessageBox::warning(this, "No Files", 
-                            QString("System %1: No files in watcher list to copy & send.").arg(systemIndex + 1));
+                            QString("%1: No files in watcher list to copy & send.").arg(getSystemName(systemIndex)));
         return;
     }
     
-    // Check if at least one destination path is configured
-    QStringList missingPaths;
-    if (!config.destination.isEmpty() && !QDir(config.destination).exists()) {
-        missingPaths << QString("Destination: %1").arg(config.destination);
-    }
-    if (!config.git.isEmpty() && !QDir(config.git).exists()) {
-        missingPaths << QString("Git: %1").arg(config.git);
-    }
-    if (!config.backup.isEmpty() && !QDir(config.backup).exists()) {
-        missingPaths << QString("Backup: %1").arg(config.backup);
-    }
-    
-    if (!missingPaths.isEmpty()) {
-        QMessageBox::warning(this, "Path Not Found", 
-                            QString("System %1: The following paths do not exist:\n\n%2\n\nPlease create them or update the paths in Settings.")
-                            .arg(systemIndex + 1)
-                            .arg(missingPaths.join("\n")));
-        return;
-    }
-    
+    // Check if at least one destination path is configured (folders will be created automatically)
     if (config.destination.isEmpty() && config.git.isEmpty() && config.backup.isEmpty()) {
         QMessageBox::warning(this, "No Paths Configured", 
-                            QString("System %1: No destination paths configured.\n\nPlease configure at least one path (Destination, Git, or Backup) in Settings.")
-                            .arg(systemIndex + 1));
+                            QString("%1: No destination paths configured.\n\nPlease configure at least one path (Destination, Git, or Backup) in Settings.")
+                            .arg(getSystemName(systemIndex)));
         return;
     }
     
-    m_logDialog->addLog(QString("System %1: Starting copy & send of %2 file(s)...").arg(systemIndex + 1).arg(filesToCopy.size()));
+    m_logDialog->addLog(QString("%1: Starting copy & send of %2 file(s)...").arg(getSystemName(systemIndex)).arg(filesToCopy.size()));
     
     int successCount = 0;
     int failCount = 0;
@@ -833,8 +818,8 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
         }
     }
     
-    m_logDialog->addLog(QString("System %1: Copy complete - %2 succeeded, %3 failed")
-                        .arg(systemIndex + 1).arg(successCount).arg(failCount));
+    m_logDialog->addLog(QString("%1: Copy complete - %2 succeeded, %3 failed")
+                        .arg(getSystemName(systemIndex)).arg(successCount).arg(failCount));
     
     // Send Telegram notification if enabled and files were copied
     m_logDialog->addLog(QString("Telegram check - Enabled: %1, Service: %2, Token: %3, ChatID: %4")
@@ -845,16 +830,16 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
     
     if (!copiedFiles.isEmpty()) {
         if (!m_notificationsEnabled) {
-            m_logDialog->addLog(QString("System %1: Telegram disabled (enable in Settings)").arg(systemIndex + 1));
+            m_logDialog->addLog(QString("%1: Telegram disabled (enable in Settings)").arg(getSystemName(systemIndex)));
         } else if (m_telegramToken.isEmpty() || m_telegramChatId.isEmpty()) {
-            m_logDialog->addLog(QString("System %1: Telegram not configured (set Token and Chat ID in Settings)").arg(systemIndex + 1));
+            m_logDialog->addLog(QString("%1: Telegram not configured (set Token and Chat ID in Settings)").arg(getSystemName(systemIndex)));
         } else if (!m_telegramService) {
-            m_logDialog->addLog(QString("System %1: Telegram service not initialized").arg(systemIndex + 1));
+            m_logDialog->addLog(QString("%1: Telegram service not initialized").arg(getSystemName(systemIndex)));
         } else {
             // Get description from the panel
             QString description = panel.descriptionEdit->text().trimmed();
             if (description.isEmpty()) {
-                description = QString("System %1").arg(systemIndex + 1);
+                description = getSystemName(systemIndex);
             }
             
             // Format file list: flat for regular files, keep path for lang files
@@ -870,25 +855,36 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
                 }
             }
             
-            // Create message: username: description\n- file1\n- file2
-            QString message = QString("%1: %2\n%3")
-                             .arg(m_username)
-                             .arg(description)
-                             .arg(formattedFiles.join("\n"));
+            // Create HTML formatted message (escape HTML special characters)
+            auto escapeHtml = [](const QString& text) -> QString {
+                QString escaped = text;
+                escaped.replace("&", "&amp;");
+                escaped.replace("<", "&lt;");
+                escaped.replace(">", "&gt;");
+                return escaped;
+            };
             
-            m_logDialog->addLog(QString("System %1: Sending Telegram message...").arg(systemIndex + 1));
+            QString title = QString("<code>%1: %2</code>").arg(escapeHtml(m_username)).arg(escapeHtml(description));
+            QString fileList = formattedFiles.join("\n");
+            QString message = QString("%1\n\n%2").arg(title).arg(fileList);
+            
+            m_logDialog->addLog(QString("%1: Sending Telegram message...").arg(getSystemName(systemIndex)));
             m_logDialog->addLog(QString("Message content:\n%1").arg(message));
             m_logDialog->addLog(QString("Chat ID: %1").arg(m_telegramChatId));
+            m_logDialog->addLog(QString("Bot Token: %1...%2 (length: %3)")
+                .arg(m_telegramToken.left(8))
+                .arg(m_telegramToken.right(4))
+                .arg(m_telegramToken.length()));
             
             m_telegramService->sendMessage(m_username, message, "");
-            m_logDialog->addLog(QString("System %1: Telegram send request initiated").arg(systemIndex + 1));
+            m_logDialog->addLog(QString("%1: Telegram send request initiated").arg(getSystemName(systemIndex)));
         }
     }
     
     // Clear the watcher table after successful copy
     if (successCount > 0) {
         panel.table->clearTable();
-        m_logDialog->addLog(QString("System %1: Watcher list cleared").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
     }
 }
 
@@ -899,7 +895,7 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     }
     
     if (systemIndex >= m_systemConfigs.size()) {
-        m_logDialog->addLog(QString("Error: Invalid system configuration for system %1").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("Error: Invalid system configuration for %1").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -911,24 +907,15 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     
     if (filesToAssign.isEmpty()) {
         QMessageBox::warning(this, "No Files", 
-                            QString("System %1: No files in watcher list to assign.").arg(systemIndex + 1));
+                            QString("%1: No files in watcher list to assign.").arg(getSystemName(systemIndex)));
         return;
     }
     
-    // Check if assign path is configured
+    // Check if assign path is configured (folder will be created automatically)
     if (config.assign.isEmpty()) {
         QMessageBox::warning(this, "No Assign Path", 
-                            QString("System %1: Assign path not configured.\n\nPlease set the Assign path in Settings.")
-                            .arg(systemIndex + 1));
-        return;
-    }
-    
-    // Check if assign path exists
-    if (!QDir(config.assign).exists()) {
-        QMessageBox::warning(this, "Path Not Found", 
-                            QString("System %1: Assign path does not exist:\n\n%2\n\nPlease create the folder or update the path in Settings.")
-                            .arg(systemIndex + 1)
-                            .arg(config.assign));
+                            QString("%1: Assign path not configured.\n\nPlease set the Assign path in Settings.")
+                            .arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -968,7 +955,7 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     
     // Show dialog
     if (dialog.exec() != QDialog::Accepted) {
-        m_logDialog->addLog(QString("System %1: Assign cancelled").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("%1: Assign cancelled").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -976,7 +963,7 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     QString description = descEdit->toPlainText().trimmed();
     
     if (folderName.isEmpty()) {
-        m_logDialog->addLog(QString("System %1: Folder name is required").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("%1: Folder name is required").arg(getSystemName(systemIndex)));
         return;
     }
     
@@ -988,11 +975,11 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     QString targetBasePath = QDir(config.assign).filePath(folderName + "/" + dateTimeFolder);
     
     if (!QDir().mkpath(targetBasePath)) {
-        m_logDialog->addLog(QString("System %1: Failed to create folder: %1").arg(systemIndex + 1).arg(targetBasePath));
+        m_logDialog->addLog(QString("%1: Failed to create folder: %2").arg(getSystemName(systemIndex)).arg(targetBasePath));
         return;
     }
     
-    m_logDialog->addLog(QString("System %1: Starting assign to folder: %2").arg(systemIndex + 1).arg(folderName));
+    m_logDialog->addLog(QString("%1: Starting assign to folder: %2").arg(getSystemName(systemIndex)).arg(folderName));
     
     // Create description.txt file if description is provided
     if (!description.isEmpty()) {
@@ -1049,14 +1036,14 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
         }
     }
     
-    m_logDialog->addLog(QString("System %1: Assign complete - %2 succeeded, %3 failed")
-                        .arg(systemIndex + 1).arg(successCount).arg(failCount));
+    m_logDialog->addLog(QString("%1: Assign complete - %2 succeeded, %3 failed")
+                        .arg(getSystemName(systemIndex)).arg(successCount).arg(failCount));
     m_logDialog->addLog(QString("Files assigned to: %1").arg(targetBasePath));
     
     // Clear the watcher table after successful assignment
     if (successCount > 0) {
         panel.table->clearTable();
-        m_logDialog->addLog(QString("System %1: Watcher list cleared").arg(systemIndex + 1));
+        m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
     }
 }
 
@@ -1065,7 +1052,7 @@ void FileWatcherApp::handleGitCompareRequested(int systemIndex)
     if (systemIndex < 0 || systemIndex >= m_systemPanels.size()) {
         return;
     }
-    m_logDialog->addLog(QString("Git compare requested for system %1").arg(systemIndex + 1));
+    m_logDialog->addLog(QString("Git compare requested for %1").arg(getSystemName(systemIndex)));
     showGitPage();
 }
 
@@ -1097,9 +1084,9 @@ void FileWatcherApp::handleViewDiffRequested(int systemIndex, const QString& fil
     // If no baseline, use empty string
     if (oldContent.isNull()) {
         oldContent = "";
-        m_diffDialog->setWindowTitle(QString("System %1: %2 (New File) - Live View").arg(systemIndex + 1).arg(filePath));
+        m_diffDialog->setWindowTitle(QString("%1: %2 (New File) - Live View").arg(getSystemName(systemIndex)).arg(filePath));
     } else {
-        m_diffDialog->setWindowTitle(QString("System %1: %2 - Live View").arg(systemIndex + 1).arg(filePath));
+        m_diffDialog->setWindowTitle(QString("%1: %2 - Live View").arg(getSystemName(systemIndex)).arg(filePath));
     }
     
     // Use live file monitoring
@@ -1108,7 +1095,7 @@ void FileWatcherApp::handleViewDiffRequested(int systemIndex, const QString& fil
     m_diffDialog->raise();
     m_diffDialog->activateWindow();
     
-    m_logDialog->addLog(QString("Viewing live diff for system %1: %2").arg(systemIndex + 1).arg(filePath));
+    m_logDialog->addLog(QString("Viewing live diff for %1: %2").arg(getSystemName(systemIndex)).arg(filePath));
 }
 
 void FileWatcherApp::setMenuActive(QAction* activeAction)
@@ -1208,7 +1195,7 @@ void FileWatcherApp::captureBaselineForSystem(int systemIndex,
     }
 
     if (fileCount > 0) {
-        m_logDialog->addLog(QString("System %1: Captured baseline for %2 files").arg(systemIndex + 1).arg(fileCount));
+        m_logDialog->addLog(QString("%1: Captured baseline for %2 files").arg(getSystemName(systemIndex)).arg(fileCount));
     }
 }
 
@@ -1286,6 +1273,17 @@ QString FileWatcherApp::readFileContent(const QString& filePath) const
     QByteArray data = file.readAll();
     file.close();
     return QString::fromUtf8(data);
+}
+
+QString FileWatcherApp::getSystemName(int systemIndex) const
+{
+    if (systemIndex >= 0 && systemIndex < m_systemConfigs.size()) {
+        const QString& name = m_systemConfigs[systemIndex].name;
+        if (!name.isEmpty()) {
+            return name;
+        }
+    }
+    return getSystemName(systemIndex);
 }
 
 void FileWatcherApp::onStartWatching()
@@ -1423,13 +1421,13 @@ void FileWatcherApp::startWatching()
 
         // Use Qt::QueuedConnection for all cross-thread signals
         connect(watcher, &WatcherThread::startedWatching, this, [this, i]() {
-            m_logDialog->addLog(QString("System %1 watcher started").arg(i + 1));
+            m_logDialog->addLog(QString("%1 watcher started").arg(getSystemName(i)));
         }, Qt::QueuedConnection);
         connect(watcher, &WatcherThread::stoppedWatching, this, [this, i]() {
-            m_logDialog->addLog(QString("System %1 watcher stopped").arg(i + 1));
+            m_logDialog->addLog(QString("%1 watcher stopped").arg(getSystemName(i)));
         }, Qt::QueuedConnection);
         connect(watcher, &WatcherThread::preloadComplete, this, [this, i]() {
-            m_logDialog->addLog(QString("System %1 preload complete").arg(i + 1));
+            m_logDialog->addLog(QString("%1 preload complete").arg(getSystemName(i)));
         }, Qt::QueuedConnection);
         connect(watcher, &WatcherThread::fileChanged, this, [this, i](const QString& path) {
             handleFileChanged(i, path);
@@ -1441,7 +1439,7 @@ void FileWatcherApp::startWatching()
             handleFileDeleted(i, path);
         }, Qt::QueuedConnection);
         connect(watcher, &WatcherThread::logMessage, this, [this, i](const QString& msg) {
-            m_logDialog->addLog(QString("Sys%1: %2").arg(i + 1).arg(msg));
+            m_logDialog->addLog(QString("%1: %2").arg(getSystemName(i)).arg(msg));
         }, Qt::QueuedConnection);
 
         watcher->start();
