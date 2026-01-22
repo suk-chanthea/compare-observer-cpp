@@ -22,11 +22,13 @@ public:
     /**
      * @brief Constructs a WatcherThread
      * @param tableIndex Index of the monitoring table
+     * @param systemName Name of the system being monitored
      * @param watchPath Root path to watch
      * @param excludedFolders Folders to exclude from monitoring
      * @param excludedFiles Files to exclude from monitoring
      */
-    WatcherThread(int tableIndex, 
+    WatcherThread(int tableIndex,
+                 const QString& systemName,
                  const QString& watchPath,
                  const QStringList& excludedFolders,
                  const QStringList& excludedFiles);
@@ -55,6 +57,7 @@ private:
     bool isExcluded(const QString& filePath) const;
 
     int m_tableIndex;
+    QString m_systemName;
     QString m_watchPath;
     QStringList m_excludedFolders;
     QStringList m_excludedFiles;

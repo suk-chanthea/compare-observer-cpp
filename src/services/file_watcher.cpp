@@ -8,10 +8,12 @@
 #include <QTimer>
 
 WatcherThread::WatcherThread(int tableIndex,
+                            const QString& systemName,
                             const QString& watchPath,
                             const QStringList& excludedFolders,
                             const QStringList& excludedFiles)
     : m_tableIndex(tableIndex),
+      m_systemName(systemName),
       m_watchPath(watchPath),
       m_excludedFolders(excludedFolders),
       m_excludedFiles(excludedFiles),
@@ -167,8 +169,7 @@ void WatcherThread::stop()
 
 void WatcherThread::addWatchRecursively(const QString& path)
 {
-    const int systemIndex = m_tableIndex + 1;
-    emit logMessage(QString("Setting up file monitoring for system %1").arg(systemIndex));
+    emit logMessage(QString("Setting up file monitoring for %1").arg(m_systemName));
     
     QDirIterator it(path, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot, 
                     QDirIterator::Subdirectories);
@@ -176,7 +177,7 @@ void WatcherThread::addWatchRecursively(const QString& path)
     
     while (it.hasNext()) {
         if (!m_running) {
-            emit logMessage(QString("Stopped monitoring setup for system %1").arg(systemIndex));
+            emit logMessage(QString("Stopped monitoring setup for %1").arg(m_systemName));
             return;
         }
         
@@ -194,7 +195,7 @@ void WatcherThread::addWatchRecursively(const QString& path)
         }
     }
 
-    emit logMessage(QString("Monitoring %1 file(s) in system %2").arg(fileCount).arg(systemIndex));
+    emit logMessage(QString("Monitoring %1 file(s) in %2").arg(fileCount).arg(m_systemName));
 }
 
 bool WatcherThread::isExcluded(const QString& filePath) const

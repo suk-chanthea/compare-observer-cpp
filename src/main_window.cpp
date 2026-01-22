@@ -121,8 +121,23 @@ void FileWatcherApp::createMenuBar()
     });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         setMenuActive(m_settingsMenuAction);
-        QMessageBox::about(this, "About Compare Observer",
-            "Compare Observer v1.0\n\nA file monitoring application with Telegram notifications.");
+        QMessageBox::about(
+            this,
+            "About Compare Observer",
+            "<h2>Compare Observer v1.0</h2>"
+            "<p><b>Compare Observer</b> is a lightweight file monitoring application designed to "
+            "track changes in selected directories and files in real time.</p>"
+        
+            "<p>The application automatically detects file creation, modification, and deletion, "
+            "allowing users to stay informed of important changes without manual checking.</p>"
+        
+            "<p>Integrated with <b>Telegram notifications</b>, Compare Observer instantly sends alerts "
+            "to your Telegram account or group whenever a monitored change occurs, ensuring you never "
+            "miss critical updates.</p>"
+        
+            "<p>This tool is ideal for developers, system administrators, and teams who need "
+            "reliable file change monitoring with fast and secure notifications.</p>"
+        );
     });
 
     setMenuActive(m_watcherMenuAction);
@@ -1382,6 +1397,11 @@ void FileWatcherApp::onSettingsClicked()
             m_telegramService.reset();
             m_logDialog->addLog("Telegram service disabled");
         }
+        
+        // Restart watching if it was active before opening settings
+        if (wasWatching) {
+            startWatching();
+        }
     }
 }
 
@@ -1439,7 +1459,7 @@ void FileWatcherApp::startWatching()
 
         captureBaselineForSystem(i, config, excludedFolders, excludedFiles);
 
-        WatcherThread* watcher = new WatcherThread(i, config.source, excludedFolders, excludedFiles);
+        WatcherThread* watcher = new WatcherThread(i, getSystemName(i), config.source, excludedFolders, excludedFiles);
         panel.watcher = watcher;
 
         // Use Qt::QueuedConnection for all cross-thread signals
@@ -1500,11 +1520,17 @@ void FileWatcherApp::closeEvent(QCloseEvent* event)
     if (m_isWatching) {
         int result = QMessageBox::question(this, "Stop Watcher?",
             "File watcher is still running. Stop it before closing?",
-            QMessageBox::Yes | QMessageBox::No);
-        if (result == QMessageBox::Yes) {
+            QMessageBox::Ok | QMessageBox::Cancel);
+        
+        if (result == QMessageBox::Ok) {
             stopWatching();
+            saveSettings();
+            event->accept();
+        } else {
+            event->ignore();
         }
+    } else {
+        saveSettings();
+        event->accept();
     }
-    saveSettings();
-    event->accept();
 }
