@@ -16,6 +16,9 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
+# Icon App
+set(APP_ICON_RESOURCE "${CMAKE_SOURCE_DIR}/resources/app.rc")
+
 # Find Qt6
 find_package(Qt6 REQUIRED COMPONENTS 
     Core 
@@ -97,10 +100,10 @@ set(HEADERS
 # Determine if we should create a console or GUI application
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Debug: Console application for debugging
-    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${APP_ICON_RESOURCE})
 else()
     # Release: GUI application (no console)
-    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
+    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${APP_ICON_RESOURCE})
 endif()
 
 # Link Qt libraries
