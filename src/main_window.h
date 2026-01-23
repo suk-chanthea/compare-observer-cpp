@@ -121,6 +121,7 @@ private:
     QVector<SettingsDialog::SystemConfigData> m_systemConfigs;
     QVector<QStringList> m_withoutRules;
     QVector<QStringList> m_exceptRules;
+    QVector<int> m_selectedSystemIndices;
 };
 
 #endif // MAIN_WINDOW_H

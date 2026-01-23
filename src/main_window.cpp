@@ -291,6 +291,25 @@ void FileWatcherApp::loadSettings()
         m_exceptRules.append(entries);
     }
     settings.endArray();
+    
+    // Load selected systems
+    m_selectedSystemIndices.clear();
+    int selectedCount = settings.beginReadArray("selectedSystems");
+    for (int i = 0; i < selectedCount; ++i) {
+        settings.setArrayIndex(i);
+        int index = settings.value("index", -1).toInt();
+        if (index >= 0) {
+            m_selectedSystemIndices.append(index);
+        }
+    }
+    settings.endArray();
+    
+    // If no saved selection, select all systems by default
+    if (m_selectedSystemIndices.isEmpty()) {
+        for (int i = 0; i < m_systemConfigs.size(); ++i) {
+            m_selectedSystemIndices.append(i);
+        }
+    }
 
     m_settingsDialog->setUsername(m_username);
     m_settingsDialog->setTelegramToken(m_telegramToken);
@@ -365,6 +384,15 @@ void FileWatcherApp::saveSettings()
         settings.setValue("git", m_systemConfigs[i].git);
         settings.setValue("backup", m_systemConfigs[i].backup);
         settings.setValue("assign", m_systemConfigs[i].assign);
+    }
+    settings.endArray();
+    
+    // Save selected systems
+    QVector<int> selectedIndices = getSelectedSystemIndices();
+    settings.beginWriteArray("selectedSystems");
+    for (int i = 0; i < selectedIndices.size(); ++i) {
+        settings.setArrayIndex(i);
+        settings.setValue("index", selectedIndices[i]);
     }
     settings.endArray();
 
@@ -1651,7 +1679,8 @@ void FileWatcherApp::updateSystemCheckboxes()
         
         // Create checkbox without tick mark
         QCheckBox* checkbox = new QCheckBox(systemName, m_systemSelectionWidget);
-        checkbox->setChecked(true); // Default: all selected
+        // Check if this system was selected
+        checkbox->setChecked(m_selectedSystemIndices.contains(i));
         checkbox->setStyleSheet(
             "QCheckBox {"
             "    color: #DADADA;"
@@ -1823,6 +1852,13 @@ void FileWatcherApp::onSystemSelectionChanged()
         // Show warning message
         QMessageBox::warning(this, "Cannot Change Selection", 
             "Stop watching before the change of system");
+    } else {
+        // Update selected system indices and save settings
+        m_selectedSystemIndices = getSelectedSystemIndices();
+        saveSettings();
+        
+        // Update status label
+        updateStatusLabel();
     }
 }
 
