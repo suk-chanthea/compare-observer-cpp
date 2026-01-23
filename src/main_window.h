@@ -17,6 +17,7 @@ class QPushButton;
 class QLineEdit;
 class QWidget;
 class QVBoxLayout;
+class QCheckBox;
 class WatcherThread;
 class TelegramService;
 class FileWatcherTable;
@@ -75,6 +76,10 @@ private:
                         const QStringList& excludedFiles) const;
     QString readFileContent(const QString& filePath) const;
     QString getSystemName(int systemIndex) const;
+    void updateSystemCheckboxes();
+    void updateStatusLabel();
+    QVector<int> getSelectedSystemIndices() const;
+    void onSystemSelectionChanged();
 
     // UI Components
     QPushButton* m_watchToggleButton;
@@ -87,6 +92,8 @@ private:
     QWidget* m_watcherPage;
     QAction* m_watcherMenuAction;
     QAction* m_settingsMenuAction;
+    QWidget* m_systemSelectionWidget;
+    QVector<QCheckBox*> m_systemCheckboxes;
 
     // Dialogs
     std::unique_ptr<LogDialog> m_logDialog;

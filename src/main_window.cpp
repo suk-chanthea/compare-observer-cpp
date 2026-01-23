@@ -26,6 +26,7 @@
 #include <QInputDialog>
 #include <QDialog>
 #include <QTextEdit>
+#include <QCheckBox>
 
 FileWatcherApp::FileWatcherApp(QWidget* parent)
     : QMainWindow(parent),
@@ -36,6 +37,7 @@ FileWatcherApp::FileWatcherApp(QWidget* parent)
       m_panelLayout(nullptr),
       m_bodyStack(nullptr),
       m_watcherPage(nullptr),
+      m_systemSelectionWidget(nullptr),
       m_logDialog(std::make_unique<LogDialog>(this)),
       m_settingsDialog(std::make_unique<SettingsDialog>(this)),
       m_diffDialog(std::make_unique<FileDiffDialog>(this)),
@@ -78,8 +80,81 @@ void FileWatcherApp::setupUI()
     controlLayout->addWidget(m_logsButton);
     mainLayout->addLayout(controlLayout);
 
-    m_statusLabel->setStyleSheet("color: #CFCFCF;");
-    mainLayout->addWidget(m_statusLabel);
+    // Combined container for Select Systems and Status
+    QWidget* infoContainer = new QWidget(this);
+    infoContainer->setStyleSheet(
+        "QWidget {"
+        "    background: transparent;"
+        "    border: none;"
+        "}"
+    );
+    infoContainer->setObjectName("infoContainer");
+    
+    QHBoxLayout* infoMainLayout = new QHBoxLayout(infoContainer);
+    infoMainLayout->setContentsMargins(0, 0, 0, 0);
+    infoMainLayout->setSpacing(30);
+    
+    // Select Systems section
+    m_systemSelectionWidget = new QWidget(infoContainer);
+    m_systemSelectionWidget->setStyleSheet(
+        "QWidget {"
+        "    background: transparent;"
+        "    border: none;"
+        "    padding: 0px;"
+        "}"
+    );
+    
+    QHBoxLayout* selectionLayout = new QHBoxLayout(m_systemSelectionWidget);
+    selectionLayout->setContentsMargins(0, 0, 0, 0);
+    selectionLayout->setSpacing(12);
+    selectionLayout->setAlignment(Qt::AlignLeft);
+    
+    QLabel* selectLabel = new QLabel("Select Systems:");
+    selectLabel->setStyleSheet(
+        "color: #B5B5B5;"
+        "font-size: 13px;"
+        "font-weight: 600;"
+        "background: transparent;"
+        "border: none;"
+        "padding: 0px;"
+    );
+    selectionLayout->addWidget(selectLabel);
+    
+    infoMainLayout->addWidget(m_systemSelectionWidget);
+    
+    // Add stretch to push status to the right
+    infoMainLayout->addStretch();
+    
+    // Status section on the right (dynamically populated)
+    QWidget* statusWidget = new QWidget(infoContainer);
+    statusWidget->setStyleSheet(
+        "QWidget {"
+        "    background: transparent;"
+        "    border: none;"
+        "    padding: 0px;"
+        "}"
+    );
+    statusWidget->setObjectName("statusWidget");
+    
+    QHBoxLayout* statusLayout = new QHBoxLayout(statusWidget);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(0);
+    
+    // Status label placeholder (will be replaced dynamically)
+    m_statusLabel = new QLabel("Idle", statusWidget);
+    m_statusLabel->setStyleSheet(
+        "color: #888888;"
+        "font-size: 13px;"
+        "background: transparent;"
+        "border: none;"
+        "padding: 0px;"
+    );
+    statusLayout->addWidget(m_statusLabel);
+    
+    infoMainLayout->addWidget(statusWidget);
+    
+    // Add info container with full width
+    mainLayout->addWidget(infoContainer);
 
     QScrollArea* scrollArea = new QScrollArea(this);
     scrollArea->setWidgetResizable(true);
@@ -307,6 +382,9 @@ void FileWatcherApp::rebuildSystemPanels()
     }
 
     m_panelLayout->addStretch();
+    
+    // Update system selection checkboxes to match current systems
+    updateSystemCheckboxes();
 }
 
 void FileWatcherApp::clearSystemPanels()
@@ -1335,11 +1413,14 @@ void FileWatcherApp::onStartWatching()
 
     if (!hasSource) {
         QMessageBox::warning(this, "Configuration Error", "Please set a source path for at least one system in settings.");
+        m_watchToggleButton->setText("Start Watching");
+        m_watchToggleButton->setEnabled(true);
         onSettingsClicked();
         return;
     }
 
     startWatching();
+    // Button will be re-enabled in startWatching after operation completes
 }
 
 void FileWatcherApp::onStopWatching()
@@ -1407,17 +1488,19 @@ void FileWatcherApp::onSettingsClicked()
 
 void FileWatcherApp::onToggleWatching()
 {
-    // Disable button during operation to prevent double-clicks
-    m_watchToggleButton->setEnabled(false);
-    
     if (m_isWatching) {
+        // Disable button during stop operation
+        m_watchToggleButton->setEnabled(false);
+        m_watchToggleButton->setText("Stopping...");
         onStopWatching();
+        m_watchToggleButton->setEnabled(true);
     } else {
+        // Disable button and show "Starting..." during start operation
+        m_watchToggleButton->setEnabled(false);
+        m_watchToggleButton->setText("Starting...");
         onStartWatching();
+        // Button will be re-enabled in onStartWatching after validation/operation
     }
-    
-    // Re-enable button after operation completes
-    m_watchToggleButton->setEnabled(true);
 }
 
 void FileWatcherApp::onViewLogs()
@@ -1435,11 +1518,22 @@ void FileWatcherApp::startWatching()
         rebuildSystemPanels();
     }
 
+    // Get selected system indices
+    QVector<int> selectedIndices = getSelectedSystemIndices();
+    
+    if (selectedIndices.isEmpty()) {
+        QMessageBox::warning(this, "No Systems Selected", 
+            "Please select at least one system to watch.");
+        m_watchToggleButton->setText("Start Watching");
+        m_watchToggleButton->setEnabled(true);
+        return;
+    }
+
     bool startedAny = false;
 
-    for (int i = 0; i < m_systemConfigs.size(); ++i) {
-        if (i >= m_systemPanels.size()) {
-            break;
+    for (int i : selectedIndices) {
+        if (i >= m_systemConfigs.size() || i >= m_systemPanels.size()) {
+            continue;
         }
 
         const auto& config = m_systemConfigs.at(i);
@@ -1492,11 +1586,19 @@ void FileWatcherApp::startWatching()
     if (startedAny) {
         m_isWatching = true;
         m_watchToggleButton->setText("Stop Watching");
-        m_statusLabel->setText("Status: Watching...");
+        m_watchToggleButton->setEnabled(true);  // Re-enable after successful start
+        
+        // Disable checkboxes while watching
+        for (QCheckBox* checkbox : m_systemCheckboxes) {
+            checkbox->setEnabled(false);
+        }
+        
+        updateStatusLabel();
         m_logDialog->addLog("File watching started successfully");
     } else {
         m_watchToggleButton->setText("Start Watching");
-        m_statusLabel->setText("Status: Idle");
+        m_watchToggleButton->setEnabled(true);  // Re-enable after failed start
+        updateStatusLabel();
         QMessageBox::warning(this, "Watch Error", "No valid source directories to watch.");
     }
 }
@@ -1511,8 +1613,216 @@ void FileWatcherApp::stopWatching()
     stopAllWatchers();
     m_isWatching = false;
     m_watchToggleButton->setText("Start Watching");
-    m_statusLabel->setText("Status: Idle");
     m_logDialog->addLog("File watching stopped");
+    
+    // Re-enable checkboxes when stopped
+    for (QCheckBox* checkbox : m_systemCheckboxes) {
+        checkbox->setEnabled(true);
+    }
+    
+    // Update status display (will show "Idle" automatically)
+    updateStatusLabel();
+}
+
+void FileWatcherApp::updateSystemCheckboxes()
+{
+    // Clear existing checkboxes
+    for (QCheckBox* checkbox : m_systemCheckboxes) {
+        checkbox->deleteLater();
+    }
+    m_systemCheckboxes.clear();
+    
+    if (!m_systemSelectionWidget) {
+        return;
+    }
+    
+    // Get the HBoxLayout from the selection widget
+    QHBoxLayout* layout = qobject_cast<QHBoxLayout*>(m_systemSelectionWidget->layout());
+    if (!layout) {
+        return;
+    }
+    
+    // Create checkbox for each system with tick mark
+    for (int i = 0; i < m_systemConfigs.size(); ++i) {
+        QString systemName = m_systemConfigs[i].name.isEmpty() 
+            ? QString("System %1").arg(i + 1) 
+            : m_systemConfigs[i].name;
+        
+        // Create checkbox without tick mark
+        QCheckBox* checkbox = new QCheckBox(systemName, m_systemSelectionWidget);
+        checkbox->setChecked(true); // Default: all selected
+        checkbox->setStyleSheet(
+            "QCheckBox {"
+            "    color: #DADADA;"
+            "    font-size: 13px;"
+            "    padding: 4px 8px 4px 12px;"
+            "    background: #252525;"
+            "    border: 1px solid #3A3A3A;"
+            "    border-radius: 4px;"
+            "}"
+            "QCheckBox:hover {"
+            "    background: #2A2A2A;"
+            "    border-color: #4A4A4A;"
+            "}"
+            "QCheckBox:checked {"
+            "    color: #FFFFFF;"
+            "    border-color: #5A5A5A;"
+            "    background: #2A2A2A;"
+            "}"
+            "QCheckBox:!checked {"
+            "    color: #888888;"
+            "    background: #1A1A1A;"
+            "    border-color: #2A2A2A;"
+            "}"
+            "QCheckBox:disabled {"
+            "    color: #555555;"
+            "    background: #1A1A1A;"
+            "    border-color: #2A2A2A;"
+            "}"
+            "QCheckBox::indicator {"
+            "    width: 0px;"
+            "    height: 0px;"
+            "}"
+        );
+        
+        // Connect to handle selection change during watching
+        connect(checkbox, &QCheckBox::checkStateChanged, this, &FileWatcherApp::onSystemSelectionChanged);
+        
+        layout->addWidget(checkbox);
+        m_systemCheckboxes.append(checkbox);
+    }
+    
+    updateStatusLabel();
+}
+
+void FileWatcherApp::updateStatusLabel()
+{
+    // Find the status widget
+    QWidget* infoContainer = centralWidget()->findChild<QWidget*>("infoContainer");
+    QWidget* statusWidget = infoContainer ? infoContainer->findChild<QWidget*>("statusWidget") : nullptr;
+    
+    if (!statusWidget) {
+        return;
+    }
+    
+    // Clear existing status items
+    QHBoxLayout* statusLayout = qobject_cast<QHBoxLayout*>(statusWidget->layout());
+    if (!statusLayout) {
+        return;
+    }
+    
+    // Remove all existing widgets from status layout
+    while (QLayoutItem* item = statusLayout->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater();
+        }
+        delete item;
+    }
+    
+    if (m_systemCheckboxes.isEmpty()) {
+        QLabel* idleLabel = new QLabel("Idle", statusWidget);
+        idleLabel->setStyleSheet(
+            "color: #888888;"
+            "font-size: 13px;"
+            "background: transparent;"
+            "border: none;"
+            "padding: 0px;"
+        );
+        statusLayout->addWidget(idleLabel);
+        return;
+    }
+    
+    int watchingCount = 0;
+    
+    // Add each system status with separators
+    for (int i = 0; i < m_systemCheckboxes.size() && i < m_systemPanels.size(); ++i) {
+        if (i > 0) {
+            // Add vertical separator between status items
+            QFrame* separator = new QFrame(statusWidget);
+            separator->setFrameShape(QFrame::VLine);
+            separator->setFrameShadow(QFrame::Plain);
+            separator->setStyleSheet(
+                "QFrame {"
+                "    background-color: #353535;"
+                "    border: none;"
+                "    max-width: 1px;"
+                "    min-height: 16px;"
+                "}"
+            );
+            statusLayout->addWidget(separator);
+        }
+        
+        QString systemName = m_systemConfigs[i].name.isEmpty() 
+            ? QString("Sys%1").arg(i + 1) 
+            : m_systemConfigs[i].name;
+        
+        bool isWatching = m_isWatching && m_systemPanels[i].watcher != nullptr;
+        if (isWatching) {
+            watchingCount++;
+        }
+        QString status = isWatching ? "Watching" : "Idle";
+        
+        // Status indicator dot
+        QLabel* statusDot = new QLabel("●", statusWidget);
+        statusDot->setStyleSheet(
+            QString("color: %1;"
+                    "font-size: 12px;"
+                    "background: transparent;"
+                    "border: none;"
+                    "padding: 0px 0px 0px 8px;")
+            .arg(isWatching ? "#4A9EFF" : "#888888")
+        );
+        statusLayout->addWidget(statusDot);
+        
+        // Status text
+        QLabel* statusLabel = new QLabel(QString("%1: %2").arg(systemName).arg(status), statusWidget);
+        statusLabel->setStyleSheet(
+            "color: #D5D5D5;"
+            "font-size: 13px;"
+            "background: transparent;"
+            "border: none;"
+            "padding: 0px 8px 0px 0px;"
+        );
+        statusLayout->addWidget(statusLabel);
+    }
+}
+
+QVector<int> FileWatcherApp::getSelectedSystemIndices() const
+{
+    QVector<int> selectedIndices;
+    for (int i = 0; i < m_systemCheckboxes.size(); ++i) {
+        if (m_systemCheckboxes[i]->isChecked()) {
+            selectedIndices.append(i);
+        }
+    }
+    return selectedIndices;
+}
+
+void FileWatcherApp::onSystemSelectionChanged()
+{
+    // If watching is active, prevent the change
+    if (m_isWatching) {
+        // Block signals temporarily to prevent infinite loop
+        for (QCheckBox* checkbox : m_systemCheckboxes) {
+            checkbox->blockSignals(true);
+        }
+        
+        // Find which checkbox was clicked and revert its state
+        QCheckBox* sender = qobject_cast<QCheckBox*>(QObject::sender());
+        if (sender) {
+            // Revert the checkbox state
+            sender->setChecked(!sender->isChecked());
+        }
+        
+        // Unblock signals
+        for (QCheckBox* checkbox : m_systemCheckboxes) {
+            checkbox->blockSignals(false);
+        }
+        
+        // Show warning message
+        QMessageBox::warning(this, "Cannot Change Selection", 
+            "Stop watching before the change of system");
+    }
 }
 
 void FileWatcherApp::closeEvent(QCloseEvent* event)
