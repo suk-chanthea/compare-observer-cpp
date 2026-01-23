@@ -1126,6 +1126,16 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     layout->addWidget(new QLabel("Name:"));
     QLineEdit* nameEdit = new QLineEdit(&dialog);
     nameEdit->setPlaceholderText("Enter name...");
+    nameEdit->setTextMargins(4, 4, 4, 4);  // Use setTextMargins for QLineEdit
+    nameEdit->setStyleSheet(
+        "QLineEdit {"
+        "    padding: 4px;"
+        "    border-radius: 6px;"
+        "    border: 1px solid #343434;"
+        "    background-color: #1B1B1B;"
+        "    color: #F3F3F3;"
+        "}"
+    );
     layout->addWidget(nameEdit);
     
     layout->addSpacing(10);
@@ -1135,6 +1145,16 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     QTextEdit* descEdit = new QTextEdit(&dialog);
     descEdit->setPlaceholderText("Enter description...");
     descEdit->setMinimumHeight(100);
+    descEdit->document()->setDocumentMargin(4);  // Add internal margin
+    descEdit->setStyleSheet(
+        "QTextEdit {"
+        "    padding: 4px;"
+        "    border-radius: 6px;"
+        "    border: 1px solid #343434;"
+        "    background-color: #1B1B1B;"
+        "    color: #F3F3F3;"
+        "}"
+    );
     layout->addWidget(descEdit);
     
     // Buttons
