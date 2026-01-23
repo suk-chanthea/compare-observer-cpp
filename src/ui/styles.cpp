@@ -14,22 +14,23 @@ QString getMainStylesheet()
             color: #DADADA;
         }
         QMenuBar {
-            background-color: #161616;
+            background-color: #1C1C1C;
             color: #EDEDED;
+            padding: 4px;
         }
         QMenuBar::item {
-            background-color: #101010;
+            background-color: transparent;
             color: #E0E0E0;
             padding: 4px 12px;
-            border-radius: 4px;
+            border-radius: 4px 4px 0 0;
         }
         QMenuBar::item[activeMenu="true"] {
-            background-color: #3A3A3A;
+            background-color: #1C1C1C;
             color: #FFFFFF;
             border-radius: 4px;
         }
         QMenuBar::item:selected {
-            background-color: #2C2C2C;
+            background-color: #1C1C1C;
             color: #FFFFFF;
         }
         QPushButton {

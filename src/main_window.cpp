@@ -16,6 +16,7 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
+#include <QWidgetAction>
 #include <QSettings>
 #include <QCloseEvent>
 #include <QMessageBox>
@@ -45,7 +46,7 @@ FileWatcherApp::FileWatcherApp(QWidget* parent)
       m_notificationsEnabled(false),
       m_isWatching(false)
 {
-    setWindowTitle("Compare Observer - File Watcher");
+    setWindowTitle("Compare Observer");
     setGeometry(100, 100, 1200, 700);
 
     setupUI();
@@ -68,10 +69,6 @@ void FileWatcherApp::setupUI()
 
     QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
     mainLayout->setSpacing(16);
-
-    m_titleLabel = new QLabel("File Monitoring");
-    m_titleLabel->setStyleSheet("font-size: 16px; font-weight: 600; color: #F5F5F5;");
-    mainLayout->addWidget(m_titleLabel);
 
     QHBoxLayout* controlLayout = new QHBoxLayout();
     controlLayout->addStretch();
@@ -173,29 +170,51 @@ void FileWatcherApp::setupUI()
     watcherPageLayout->setSpacing(0);
     watcherPageLayout->addWidget(scrollArea);
     m_bodyStack->addWidget(m_watcherPage);
-
-    showWatcherPage();
+    m_bodyStack->setCurrentWidget(m_watcherPage);
+    
     mainLayout->addWidget(m_bodyStack);
 }
 
 void FileWatcherApp::createMenuBar()
 {
-    m_watcherMenuAction = menuBar()->addAction("Watcher");
-    connect(m_watcherMenuAction, &QAction::triggered, this, [this]() {
-        showWatcherPage();
-    });
+    // Add File Monitoring menu on the left
+    QMenu* fileMonitoringMenu = menuBar()->addMenu("File Monitoring");
+    fileMonitoringMenu->setStyleSheet(
+        "QMenu {"
+        "    background-color: #1E1E1E;"
+        "    color: #E0E0E0;"
+        "    border: 1px solid #3A3A3A;"
+        "}"
+        "QMenu::item {"
+        "    padding: 6px 24px;"
+        "}"
+        "QMenu::item:selected {"
+        "    background-color: transparent;"
+        "}"
+    );
+    
+    // Add Help menu next to File Monitoring
+    QMenu* helpMenu = menuBar()->addMenu("Help");
+    helpMenu->setStyleSheet(
+        "QMenu {"
+        "    background-color: #1E1E1E;"
+        "    color: #E0E0E0;"
+        "    border: 1px solid #1C1C1C;"
+        "}"
+        "QMenu::item {"
+        "    padding: 6px 24px;"
+        "}"
+        "QMenu::item:selected {"
+        "    background-color: #2C2C2C;"
+        "}"
+    );
+    
+    QAction* openSettingsAction = helpMenu->addAction("Settings");
+    QAction* aboutAction = helpMenu->addAction("About Us");
 
-    QMenu* settingsMenu = menuBar()->addMenu("Settings");
-    m_settingsMenuAction = settingsMenu->menuAction();
-    QAction* openSettingsAction = settingsMenu->addAction("Application Settings");
-    QAction* aboutAction = settingsMenu->addAction("About");
-
-    connect(openSettingsAction, &QAction::triggered, this, [this]() {
-        setMenuActive(m_settingsMenuAction);
-        onSettingsClicked();
-    });
+    connect(openSettingsAction, &QAction::triggered, this, &FileWatcherApp::onSettingsClicked);
+    
     connect(aboutAction, &QAction::triggered, this, [this]() {
-        setMenuActive(m_settingsMenuAction);
         QMessageBox::about(
             this,
             "About Compare Observer",
@@ -214,14 +233,15 @@ void FileWatcherApp::createMenuBar()
             "reliable file change monitoring with fast and secure notifications.</p>"
         );
     });
-
-    setMenuActive(m_watcherMenuAction);
 }
 
 void FileWatcherApp::connectSignals()
 {
     connect(m_watchToggleButton, &QPushButton::clicked, this, &FileWatcherApp::onToggleWatching);
     connect(m_logsButton, &QPushButton::clicked, this, &FileWatcherApp::onViewLogs);
+    
+    // Connect diff dialog log messages to main log dialog
+    connect(m_diffDialog.get(), &FileDiffDialog::logMessage, m_logDialog.get(), &LogDialog::addLog);
 }
 
 void FileWatcherApp::loadSettings()
@@ -1016,9 +1036,10 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
         }
     }
     
-    // Clear the watcher table after successful copy
+    // Clear the watcher table and description after successful copy
     if (successCount > 0) {
         panel.table->clearTable();
+        panel.descriptionEdit->clear();
         m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
     }
 }
@@ -1222,44 +1243,6 @@ void FileWatcherApp::handleViewDiffRequested(int systemIndex, const QString& fil
     m_diffDialog->activateWindow();
     
     m_logDialog->addLog(QString("Viewing live diff for %1: %2").arg(getSystemName(systemIndex)).arg(filePath));
-}
-
-void FileWatcherApp::setMenuActive(QAction* activeAction)
-{
-    QList<QAction*> menuActions = { m_watcherMenuAction, m_settingsMenuAction };
-    for (QAction* action : menuActions) {
-        if (!action) {
-            continue;
-        }
-        bool isActive = (action == activeAction);
-        action->setProperty("activeMenu", isActive);
-    }
-
-    if (menuBar()) {
-        menuBar()->style()->unpolish(menuBar());
-        menuBar()->style()->polish(menuBar());
-        menuBar()->update();
-    }
-}
-
-void FileWatcherApp::showWatcherPage()
-{
-    if (m_bodyStack && m_watcherPage) {
-        m_bodyStack->setCurrentWidget(m_watcherPage);
-    }
-    if (m_titleLabel) {
-        m_titleLabel->setText("File Monitoring");
-    }
-    if (m_watchToggleButton) {
-        m_watchToggleButton->setVisible(true);
-    }
-    if (m_logsButton) {
-        m_logsButton->setVisible(true);
-    }
-    if (m_statusLabel) {
-        m_statusLabel->setVisible(true);
-    }
-    setMenuActive(m_watcherMenuAction);
 }
 
 void FileWatcherApp::captureBaselineForSystem(int systemIndex,

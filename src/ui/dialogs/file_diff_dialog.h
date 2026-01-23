@@ -33,8 +33,13 @@ public:
      */
     void setLiveFile(const QString& filePath, const QString& oldContent);
 
+signals:
+    void logMessage(const QString& message);
+
 private slots:
     void refreshContent();
+    void syncOldToNew();
+    void syncNewToOld();
 
 private:
     void highlightDifferences(const QString& oldContent, const QString& newContent);
@@ -49,6 +54,8 @@ private:
     QString m_filePath;
     QString m_baselineContent;
     QString m_lastContent;
+    
+    bool m_syncingScroll;
 };
 
 #endif // FILE_DIFF_DIALOG_H

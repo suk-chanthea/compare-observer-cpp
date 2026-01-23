@@ -53,7 +53,6 @@ private:
     void stopWatching();
     void onStartWatching();
     void onStopWatching();
-    void setMenuActive(QAction* activeAction);
     void rebuildSystemPanels();
     void clearSystemPanels();
     void buildSystemPanel(int index, const SettingsDialog::SystemConfigData& config);
@@ -66,7 +65,6 @@ private:
     void handleAssignToRequested(int systemIndex);
     void handleViewDiffRequested(int systemIndex, const QString& filePath);
     void stopAllWatchers();
-    void showWatcherPage();
     void captureBaselineForSystem(int systemIndex,
                                   const SettingsDialog::SystemConfigData& config,
                                   const QStringList& excludedFolders,
@@ -90,8 +88,6 @@ private:
     QVBoxLayout* m_panelLayout;
     QStackedWidget* m_bodyStack;
     QWidget* m_watcherPage;
-    QAction* m_watcherMenuAction;
-    QAction* m_settingsMenuAction;
     QWidget* m_systemSelectionWidget;
     QVector<QCheckBox*> m_systemCheckboxes;
 

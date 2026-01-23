@@ -15,6 +15,7 @@
 #include <QMap>
 #include <QScrollBar>
 #include <QBrush>
+#include <QDebug>
 
 FileDiffDialog::FileDiffDialog(QWidget* parent)
     : QDialog(parent),
@@ -22,7 +23,8 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
       m_newContentEdit(new CustomTextEdit()),
       m_splitter(new QSplitter(Qt::Horizontal)),
       m_refreshTimer(new QTimer(this)),
-      m_statusLabel(new QLabel(""))
+      m_statusLabel(new QLabel("")),
+      m_syncingScroll(false)
 {
     setWindowTitle("File Diff Viewer - Live");
     setGeometry(100, 100, 1000, 600);
@@ -65,6 +67,11 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
     m_splitter->addWidget(newWidget);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 1);
+    
+    // Set equal sizes for both panels
+    QList<int> sizes;
+    sizes << 500 << 500;  // Equal width
+    m_splitter->setSizes(sizes);
 
     // Status label for auto-refresh
     m_statusLabel->setStyleSheet("color: #888888; font-size: 9pt;");
@@ -86,11 +93,11 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
 
     connect(closeButton, &QPushButton::clicked, this, &QDialog::close);
     
-    // Setup synchronized scrolling
+    // Setup synchronized scrolling with line-based synchronization
     connect(m_oldContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
-            m_newContentEdit->verticalScrollBar(), &QScrollBar::setValue);
+            this, &FileDiffDialog::syncOldToNew);
     connect(m_newContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
-            m_oldContentEdit->verticalScrollBar(), &QScrollBar::setValue);
+            this, &FileDiffDialog::syncNewToOld);
     
     // Setup auto-refresh timer (every 2 seconds)
     m_refreshTimer->setInterval(2000);
@@ -259,6 +266,17 @@ void FileDiffDialog::highlightDifferences(const QString& oldContent, const QStri
         }
     }
     
+    // Verify alignment - both should have same number of lines
+    if (alignedOld.size() != alignedNew.size()) {
+        // Pad the shorter one with empty lines
+        while (alignedOld.size() < alignedNew.size()) {
+            alignedOld.append("");
+        }
+        while (alignedNew.size() < alignedOld.size()) {
+            alignedNew.append("");
+        }
+    }
+    
     // Update display with aligned content
     m_oldContentEdit->setPlainText(alignedOld.join('\n'));
     m_newContentEdit->setPlainText(alignedNew.join('\n'));
@@ -354,4 +372,46 @@ QString FileDiffDialog::readFileContent(const QString& filePath)
     QByteArray data = file.readAll();
     file.close();
     return QString::fromUtf8(data);
+}
+
+void FileDiffDialog::syncOldToNew()
+{
+    if (m_syncingScroll) return;
+    m_syncingScroll = true;
+    
+    QScrollBar* oldBar = m_oldContentEdit->verticalScrollBar();
+    QScrollBar* newBar = m_newContentEdit->verticalScrollBar();
+    
+    // Calculate the scroll percentage from old scrollbar
+    double scrollPercentage = 0.0;
+    if (oldBar->maximum() > 0) {
+        scrollPercentage = static_cast<double>(oldBar->value()) / static_cast<double>(oldBar->maximum());
+    }
+    
+    // Apply the same percentage to new scrollbar
+    int newValue = static_cast<int>(scrollPercentage * newBar->maximum());
+    newBar->setValue(newValue);
+    
+    m_syncingScroll = false;
+}
+
+void FileDiffDialog::syncNewToOld()
+{
+    if (m_syncingScroll) return;
+    m_syncingScroll = true;
+    
+    QScrollBar* oldBar = m_oldContentEdit->verticalScrollBar();
+    QScrollBar* newBar = m_newContentEdit->verticalScrollBar();
+    
+    // Calculate the scroll percentage from new scrollbar
+    double scrollPercentage = 0.0;
+    if (newBar->maximum() > 0) {
+        scrollPercentage = static_cast<double>(newBar->value()) / static_cast<double>(newBar->maximum());
+    }
+    
+    // Apply the same percentage to old scrollbar
+    int oldValue = static_cast<int>(scrollPercentage * oldBar->maximum());
+    oldBar->setValue(oldValue);
+    
+    m_syncingScroll = false;
 }
