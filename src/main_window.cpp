@@ -808,6 +808,12 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
     if (successCount > 0) {
         panel.table->clearTable();
         m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
+        
+        // Re-capture baseline from current file state so future changes are compared correctly
+        QStringList excludedFolders = ruleListForSystem(m_withoutRules, systemIndex);
+        QStringList excludedFiles = ruleListForSystem(m_exceptRules, systemIndex);
+        captureBaselineForSystem(systemIndex, config, excludedFolders, excludedFiles);
+        m_logDialog->addLog(QString("%1: Baseline updated to current state").arg(getSystemName(systemIndex)));
     }
 }
 
@@ -1041,6 +1047,12 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
         panel.table->clearTable();
         panel.descriptionEdit->clear();
         m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
+        
+        // Re-capture baseline from current file state so future changes are compared correctly
+        QStringList excludedFolders = ruleListForSystem(m_withoutRules, systemIndex);
+        QStringList excludedFiles = ruleListForSystem(m_exceptRules, systemIndex);
+        captureBaselineForSystem(systemIndex, config, excludedFolders, excludedFiles);
+        m_logDialog->addLog(QString("%1: Baseline updated to current state").arg(getSystemName(systemIndex)));
     }
 }
 
@@ -1200,6 +1212,12 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     if (successCount > 0) {
         panel.table->clearTable();
         m_logDialog->addLog(QString("%1: Watcher list cleared").arg(getSystemName(systemIndex)));
+        
+        // Re-capture baseline from current file state so future changes are compared correctly
+        QStringList excludedFolders = ruleListForSystem(m_withoutRules, systemIndex);
+        QStringList excludedFiles = ruleListForSystem(m_exceptRules, systemIndex);
+        captureBaselineForSystem(systemIndex, config, excludedFolders, excludedFiles);
+        m_logDialog->addLog(QString("%1: Baseline updated to current state").arg(getSystemName(systemIndex)));
     }
 }
 
