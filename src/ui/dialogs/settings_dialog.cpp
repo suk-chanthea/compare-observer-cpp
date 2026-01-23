@@ -536,22 +536,8 @@ bool SettingsDialog::loadRemoteRuleDefaults()
         
         QVector<QStringList> rows = rulesFromJson(root["without"].toArray());
         if (!rows.isEmpty()) {
-            // Debug: Verify each row has data for all columns
-            QString debugInfo = QString("API returned %1 rows for %2 systems:\n").arg(rows.size()).arg(systemCount());
-            for (int i = 0; i < qMin(3, rows.size()); ++i) {
-                debugInfo += QString("Row %1: [").arg(i);
-                for (int j = 0; j < rows[i].size(); ++j) {
-                    debugInfo += QString("\"%1\"").arg(rows[i][j]);
-                    if (j < rows[i].size() - 1) debugInfo += ", ";
-                }
-                debugInfo += "]\n";
-            }
-            
             setWithoutData(rows);
             updated = true;
-            
-            // Debug: Show success message with data structure
-            QMessageBox::information(this, "API Success - Without", debugInfo);
         }
     }
 
@@ -562,22 +548,8 @@ bool SettingsDialog::loadRemoteRuleDefaults()
         
         QVector<QStringList> rows = rulesFromJson(root["except"].toArray());
         if (!rows.isEmpty()) {
-            // Debug: Verify each row has data for all columns
-            QString debugInfo = QString("API returned %1 rows for %2 systems:\n").arg(rows.size()).arg(systemCount());
-            for (int i = 0; i < qMin(3, rows.size()); ++i) {
-                debugInfo += QString("Row %1: [").arg(i);
-                for (int j = 0; j < rows[i].size(); ++j) {
-                    debugInfo += QString("\"%1\"").arg(rows[i][j]);
-                    if (j < rows[i].size() - 1) debugInfo += ", ";
-                }
-                debugInfo += "]\n";
-            }
-            
             setExceptData(rows);
             updated = true;
-            
-            // Debug: Show success message with data structure
-            QMessageBox::information(this, "API Success - Except", debugInfo);
         }
     }
     
