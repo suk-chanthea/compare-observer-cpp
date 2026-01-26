@@ -2027,15 +2027,37 @@ bool FileWatcherApp::isFileInWithoutList(int systemIndex, const QString& filePat
         QString normalizedRule = trimmedRule;
         normalizedRule.replace('\\', '/');
         
+        // Ensure rule ends with / for proper folder matching
+        if (!normalizedRule.endsWith('/')) {
+            normalizedRule += '/';
+        }
+        
         qDebug() << "  Checking rule:'" << normalizedRule << "'";
         qDebug() << "  Against file:'" << normalizedFilePath << "'";
         
-        // Check if the file path starts with or contains the rule
-        if (normalizedFilePath.contains(normalizedRule, Qt::CaseInsensitive)) {
-            qDebug() << "  ✓✓✓ MATCH! File will be flattened ✓✓✓";
-            return true;
+        // Check if the file path starts with the rule (is in this folder or subfolder)
+        if (normalizedFilePath.startsWith(normalizedRule, Qt::CaseInsensitive)) {
+            // Get the remaining path after the rule
+            QString remainingPath = normalizedFilePath.mid(normalizedRule.length());
+            
+            qDebug() << "  Remaining path after rule:" << remainingPath;
+            
+            // Count slashes in remaining path
+            // If there's more than 0 slashes (excluding trailing), it's in a subfolder
+            int slashCount = remainingPath.count('/');
+            
+            qDebug() << "  Slash count in remaining path:" << slashCount;
+            
+            if (slashCount == 0) {
+                // File is directly in this folder (no subfolders)
+                qDebug() << "  ✓✓✓ MATCH! File is DIRECTLY in folder - will be flattened ✓✓✓";
+                return true;
+            } else {
+                // File is in a subfolder - don't flatten, show full path
+                qDebug() << "  ✗ File is in SUBFOLDER (" << slashCount << " level(s) deep) - showing full path";
+            }
         } else {
-            qDebug() << "  ✗ No match";
+            qDebug() << "  ✗ No match - doesn't start with rule";
         }
     }
     
