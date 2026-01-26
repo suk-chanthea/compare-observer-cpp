@@ -135,9 +135,16 @@ void FileWatcherTable::addDeleteButton(int row)
     deleteBtn->setToolTip("Remove from list");
     deleteBtn->setCursor(Qt::PointingHandCursor);
     
-    // Connect delete button
-    connect(deleteBtn, &QPushButton::clicked, this, [this, row]() {
-        onDeleteClicked(row);
+    // Connect delete button - find row dynamically to handle row shifts
+    connect(deleteBtn, &QPushButton::clicked, this, [this, deleteBtn]() {
+        // Find the current row of this button (handles row index changes after deletions)
+        for (int i = 0; i < rowCount(); ++i) {
+            QWidget* widget = cellWidget(i, 3);
+            if (widget && widget->findChild<QPushButton*>() == deleteBtn) {
+                onDeleteClicked(i);
+                break;
+            }
+        }
     });
     
     layout->addWidget(deleteBtn);

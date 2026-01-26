@@ -25,7 +25,6 @@ WatcherThread::WatcherThread(int tableIndex,
 WatcherThread::~WatcherThread()
 {
     stop();
-    // m_watcher is cleaned up in run() when thread exits
 }
 
 static void addWatchPath(QFileSystemWatcher* watcher, const QString& path)
@@ -48,9 +47,12 @@ static void addWatchPath(QFileSystemWatcher* watcher, const QString& path)
 
 void WatcherThread::run()
 {
-    m_running = true;
+    {
+        QMutexLocker locker(&m_mutex);
+        m_running = true;
+    }
 
-    // Create file system watcher
+    // Create file system watcher in this thread
     m_watcher = new QFileSystemWatcher();
 
     // Signal that baseline should be captured now
@@ -62,80 +64,18 @@ void WatcherThread::run()
     // Connect file change signal
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this,
             [this](const QString& path) {
-        if (isExcluded(path)) {
-            return;
-        }
-
-        QFileInfo info(path);
-        if (!info.exists()) {
-            // File was deleted
-            emit fileDeleted(path);
-            return;
-        }
-
-        // Get current modified time
-        qint64 currentModified = info.lastModified().toMSecsSinceEpoch();
-
-        // Check if this is a duplicate event (within 500ms)
-        if (m_lastChangeTime.contains(path)) {
-            qint64 timeSinceLastChange = currentModified - m_lastChangeTime[path];
-            if (timeSinceLastChange < 500) {
-                // Too soon - likely duplicate event, ignore
-                return;
-            }
-        }
-
-        // Update last change time
-        m_lastChangeTime[path] = currentModified;
-
-        // Re-add watch (QFileSystemWatcher removes it after change on some systems)
-        if (!m_watcher->files().contains(path)) {
-            m_watcher->addPath(path);
-        }
-
-        // Emit the change signal
-        emit fileChanged(path);
-        emit logMessage(QString("Change detected: %1").arg(path));
+        handleFileChanged(path);
     }, Qt::QueuedConnection);
 
     // Connect directory change signal  
     connect(m_watcher, &QFileSystemWatcher::directoryChanged, this,
             [this](const QString& path) {
-        if (isExcluded(path)) {
-            return;
-        }
-
-        // Re-add watch for the directory itself
-        if (!m_watcher->directories().contains(path)) {
-            m_watcher->addPath(path);
-        }
-
-        // Scan for new files in changed directory
-        QDir dir(path);
-        const QFileInfoList entries = dir.entryInfoList(
-            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
-
-        for (const QFileInfo& info : entries) {
-            const QString filePath = info.absoluteFilePath();
-            if (isExcluded(filePath)) {
-                continue;
-            }
-
-            // Add watch if not already watching
-            if (info.isFile() && !m_watcher->files().contains(filePath)) {
-                addWatchPath(m_watcher, filePath);
-                emit fileCreated(filePath);
-                emit logMessage(QString("New file detected: %1").arg(filePath));
-            } else if (info.isDir() && !m_watcher->directories().contains(filePath)) {
-                addWatchPath(m_watcher, filePath);
-                emit logMessage(QString("New directory detected: %1").arg(filePath));
-            }
-        }
+        handleDirectoryChanged(path);
     }, Qt::DirectConnection);
 
     emit startedWatching();
 
-    // Use Qt's event loop instead of manual processing
+    // Use Qt's event loop
     exec();
     
     // Clean up after event loop exits
@@ -144,23 +84,102 @@ void WatcherThread::run()
         delete m_watcher;
         m_watcher = nullptr;
     }
+    
+    emit stoppedWatching();
+}
+
+void WatcherThread::handleFileChanged(const QString& path)
+{
+    if (isExcluded(path)) {
+        return;
+    }
+
+    QFileInfo info(path);
+    if (!info.exists()) {
+        emit fileDeleted(path);
+        return;
+    }
+
+    qint64 currentModified = info.lastModified().toMSecsSinceEpoch();
+
+    // Thread-safe duplicate check
+    if (isDuplicateEvent(path, currentModified)) {
+        return;
+    }
+
+    // Re-add watch (QFileSystemWatcher removes it after change on some systems)
+    if (!m_watcher->files().contains(path)) {
+        m_watcher->addPath(path);
+    }
+
+    emit fileChanged(path);
+    emit logMessage(QString("Change detected: %1").arg(path));
+}
+
+void WatcherThread::handleDirectoryChanged(const QString& path)
+{
+    if (isExcluded(path)) {
+        return;
+    }
+
+    // Re-add watch for the directory itself
+    if (!m_watcher->directories().contains(path)) {
+        m_watcher->addPath(path);
+    }
+
+    // Scan for new files in changed directory
+    QDir dir(path);
+    const QFileInfoList entries = dir.entryInfoList(
+        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+
+    for (const QFileInfo& info : entries) {
+        const QString filePath = info.absoluteFilePath();
+        if (isExcluded(filePath)) {
+            continue;
+        }
+
+        // Add watch if not already watching
+        if (info.isFile() && !m_watcher->files().contains(filePath)) {
+            addWatchPath(m_watcher, filePath);
+            emit fileCreated(filePath);
+            emit logMessage(QString("New file detected: %1").arg(filePath));
+        } else if (info.isDir() && !m_watcher->directories().contains(filePath)) {
+            addWatchPath(m_watcher, filePath);
+            emit logMessage(QString("New directory detected: %1").arg(filePath));
+        }
+    }
+}
+
+bool WatcherThread::isDuplicateEvent(const QString& path, qint64 currentTime)
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (m_lastChangeTime.contains(path)) {
+        qint64 timeSinceLastChange = currentTime - m_lastChangeTime[path];
+        if (timeSinceLastChange < WatcherConfig::DUPLICATE_EVENT_THRESHOLD_MS) {
+            return true;
+        }
+    }
+    
+    m_lastChangeTime[path] = currentTime;
+    return false;
 }
 
 void WatcherThread::stop()
 {
-    QMutexLocker locker(&m_mutex);
-    if (!m_running) {
-        return;
+    {
+        QMutexLocker locker(&m_mutex);
+        if (!m_running) {
+            return;
+        }
+        m_running = false;
     }
-    m_running = false;
-    locker.unlock();
     
     // Request thread to exit event loop
     quit();
     
     // Wait for thread to finish with timeout
     if (!wait(5000)) {
-        // Force terminate if it takes too long
         emit logMessage("Warning: Watcher thread forced to terminate");
         terminate();
         wait();
@@ -176,9 +195,12 @@ void WatcherThread::addWatchRecursively(const QString& path)
     qint64 fileCount = 0;
     
     while (it.hasNext()) {
-        if (!m_running) {
-            emit logMessage(QString("Stopped monitoring setup for %1").arg(m_systemName));
-            return;
+        {
+            QMutexLocker locker(&m_mutex);
+            if (!m_running) {
+                emit logMessage(QString("Stopped monitoring setup for %1").arg(m_systemName));
+                return;
+            }
         }
         
         QString filePath = it.next();
@@ -206,7 +228,7 @@ bool WatcherThread::isExcluded(const QString& filePath) const
     QFileInfo fileInfo(normalized);
     QString fileName = fileInfo.fileName();
     
-    // Exclude editor backup files (ending with ~)
+    // Exclude editor backup files
     if (fileName.endsWith('~')) {
         return true;
     }
@@ -223,16 +245,15 @@ bool WatcherThread::isExcluded(const QString& filePath) const
         return true;
     }
     
-    // Check excluded folders (from "Without" list)
+    QString sep = QDir::separator();
+    
+    // Check excluded folders
     for (const auto& folder : m_excludedFolders) {
         const QString trimmed = folder.trimmed();
         if (trimmed.isEmpty()) {
             continue;
         }
         
-        // Check if folder appears as a path component (exact folder name match)
-        // Match "\foldername\" anywhere in path OR "\foldername" at end
-        QString sep = QDir::separator();
         QString folderInPath = sep + trimmed + sep;
         QString folderAtEnd = sep + trimmed;
         
@@ -242,20 +263,16 @@ bool WatcherThread::isExcluded(const QString& filePath) const
         }
     }
     
-    // Check excluded files (from "Except" list)
+    // Check excluded files
     for (const auto& file : m_excludedFiles) {
         const QString trimmed = file.trimmed();
         if (trimmed.isEmpty()) {
             continue;
         }
         
-        // Check if it's a folder pattern (doesn't have file extension)
         bool isFolder = !trimmed.contains('.') || trimmed.startsWith(".");
         
         if (isFolder) {
-            // Treat as folder - check as path component
-            // Match "\foldername\" anywhere in path OR "\foldername" at end
-            QString sep = QDir::separator();
             QString folderInPath = sep + trimmed + sep;
             QString folderAtEnd = sep + trimmed;
             
@@ -264,7 +281,6 @@ bool WatcherThread::isExcluded(const QString& filePath) const
                 return true;
             }
         } else {
-            // Treat as file pattern - check if path ends with it
             if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
                 return true;
             }

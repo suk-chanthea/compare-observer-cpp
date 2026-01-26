@@ -8,12 +8,19 @@
 #include <QFileSystemWatcher>
 #include <QMutex>
 #include <QMap>
+#include <memory>
+
+// Configuration constants
+namespace WatcherConfig {
+    constexpr qint64 DUPLICATE_EVENT_THRESHOLD_MS = 500;
+    constexpr int FILE_READ_BUFFER_SIZE = 8192;
+}
 
 /**
  * @brief WatcherThread monitors a directory for file changes
  * 
  * This class watches for file changes and reports them.
- * The baseline content is managed by FileWatcherApp, not here.
+ * Thread-safe implementation with proper resource management.
  */
 class WatcherThread : public QThread {
     Q_OBJECT
@@ -33,10 +40,14 @@ public:
                  const QStringList& excludedFolders,
                  const QStringList& excludedFiles);
     
-    ~WatcherThread();
+    ~WatcherThread() override;
+
+    // Delete copy constructor and assignment operator
+    WatcherThread(const WatcherThread&) = delete;
+    WatcherThread& operator=(const WatcherThread&) = delete;
 
     /**
-     * @brief Stops the watcher thread
+     * @brief Stops the watcher thread safely
      */
     void stop();
 
@@ -55,15 +66,21 @@ protected:
 private:
     void addWatchRecursively(const QString& path);
     bool isExcluded(const QString& filePath) const;
+    void handleFileChanged(const QString& path);
+    void handleDirectoryChanged(const QString& path);
+    bool isDuplicateEvent(const QString& path, qint64 currentTime);
 
     int m_tableIndex;
     QString m_systemName;
     QString m_watchPath;
     QStringList m_excludedFolders;
     QStringList m_excludedFiles;
+    
+    // Using raw pointer because QFileSystemWatcher must be created in the thread
     QFileSystemWatcher* m_watcher;
+    
     bool m_running;
-    QMutex m_mutex;
+    mutable QMutex m_mutex;
     QMap<QString, qint64> m_lastChangeTime;
 };
 

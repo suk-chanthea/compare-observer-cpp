@@ -1,5 +1,6 @@
 #include "file_diff_dialog.h"
 #include "../widgets/custom_text_edit.h"
+#include "../../config.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QSplitter>
@@ -32,7 +33,7 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
     m_oldContentEdit->setReadOnly(true);
     m_newContentEdit->setReadOnly(true);
     
-    // Set plain styling with no color highlighting - just dark theme
+    // Plain styling - dark theme
     QString plainTextStyle = 
         "QPlainTextEdit {"
         "   background-color: #1E1E1E;"
@@ -47,40 +48,36 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
     m_oldContentEdit->setStyleSheet(plainTextStyle);
     m_newContentEdit->setStyleSheet(plainTextStyle);
 
-    QWidget* oldWidget = new QWidget();
-    QVBoxLayout* oldLayout = new QVBoxLayout();
-    QLabel* oldLabel = new QLabel("Old Content (Baseline) - 🔴 Removed, 🟠 Modified");
+    QWidget* oldWidget = new QWidget(this);
+    QVBoxLayout* oldLayout = new QVBoxLayout(oldWidget);
+    QLabel* oldLabel = new QLabel("Old Content (Baseline) - 🔴 Removed, 🟠 Modified", oldWidget);
     oldLabel->setStyleSheet("font-weight: bold; color: #CCCCCC; font-size: 9pt;");
     oldLayout->addWidget(oldLabel);
     oldLayout->addWidget(m_oldContentEdit);
-    oldWidget->setLayout(oldLayout);
 
-    QWidget* newWidget = new QWidget();
-    QVBoxLayout* newLayout = new QVBoxLayout();
-    QLabel* newLabel = new QLabel("New Content (Live) - 🟢 Added, 🟠 Modified");
+    QWidget* newWidget = new QWidget(this);
+    QVBoxLayout* newLayout = new QVBoxLayout(newWidget);
+    QLabel* newLabel = new QLabel("New Content (Live) - 🟢 Added, 🟠 Modified", newWidget);
     newLabel->setStyleSheet("font-weight: bold; color: #CCCCCC; font-size: 9pt;");
     newLayout->addWidget(newLabel);
     newLayout->addWidget(m_newContentEdit);
-    newWidget->setLayout(newLayout);
 
     m_splitter->addWidget(oldWidget);
     m_splitter->addWidget(newWidget);
     m_splitter->setStretchFactor(0, 1);
     m_splitter->setStretchFactor(1, 1);
     
-    // Set equal sizes for both panels
     QList<int> sizes;
-    sizes << 500 << 500;  // Equal width
+    sizes << 500 << 500;
     m_splitter->setSizes(sizes);
 
-    // Status label for auto-refresh
     m_statusLabel->setStyleSheet("color: #888888; font-size: 9pt;");
     m_statusLabel->setText("🔄 Auto-refresh enabled");
 
-    QPushButton* closeButton = new QPushButton("Close");
+    QPushButton* closeButton = new QPushButton("Close", this);
     closeButton->setStyleSheet("background-color: #0B57D0; color: white; padding: 6px 16px; border-radius: 4px;");
 
-    QVBoxLayout* mainLayout = new QVBoxLayout();
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->addWidget(m_splitter);
     
     QHBoxLayout* buttonLayout = new QHBoxLayout();
@@ -89,18 +86,17 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
     buttonLayout->addWidget(closeButton);
     mainLayout->addLayout(buttonLayout);
 
-    setLayout(mainLayout);
-
     connect(closeButton, &QPushButton::clicked, this, &QDialog::close);
     
-    // Setup synchronized scrolling with line-based synchronization
+    // Setup synchronized scrolling
     connect(m_oldContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
             this, &FileDiffDialog::syncOldToNew);
     connect(m_newContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
             this, &FileDiffDialog::syncNewToOld);
     
-    // Setup auto-refresh timer (every 2 seconds)
-    m_refreshTimer->setInterval(2000);
+    // Use configurable refresh interval
+    int refreshInterval = AppConfig::instance().autoRefreshInterval();
+    m_refreshTimer->setInterval(refreshInterval);
     connect(m_refreshTimer, &QTimer::timeout, this, &FileDiffDialog::refreshContent);
 }
 
@@ -137,19 +133,30 @@ void FileDiffDialog::refreshContent()
     
     QString currentContent = readFileContent(m_filePath);
     
-    // Only update if content changed
-    if (currentContent != m_lastContent) {
-        m_lastContent = currentContent;
-        // highlightDifferences will set the content and add padding
-        highlightDifferences(m_baselineContent, currentContent);
-        
-        QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
-        m_statusLabel->setText(QString("🔄 Updated: %1").arg(timestamp));
+    // Quick size check before expensive string comparison
+    if (currentContent.size() == m_lastContent.size()) {
+        // Only do full comparison if sizes match
+        if (currentContent == m_lastContent) {
+            return;
+        }
     }
+    
+    m_lastContent = currentContent;
+    highlightDifferences(m_baselineContent, currentContent);
+    
+    QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
+    m_statusLabel->setText(QString("🔄 Updated: %1").arg(timestamp));
 }
 
 void FileDiffDialog::highlightDifferences(const QString& oldContent, const QString& newContent)
 {
+    // Quick check - if identical, no need to process
+    if (oldContent == newContent) {
+        m_oldContentEdit->setPlainText(oldContent);
+        m_newContentEdit->setPlainText(newContent);
+        return;
+    }
+    
     QStringList oldLines = oldContent.split('\n');
     QStringList newLines = newContent.split('\n');
     
@@ -160,30 +167,30 @@ void FileDiffDialog::highlightDifferences(const QString& oldContent, const QStri
     int oldIdx = 0;
     int newIdx = 0;
     
+    // Alignment algorithm (same as before but with better comments)
     while (oldIdx < oldLines.size() || newIdx < newLines.size()) {
-        // If both have lines and they match, add them both
         if (oldIdx < oldLines.size() && newIdx < newLines.size() && 
             oldLines[oldIdx] == newLines[newIdx]) {
+            // Lines match - add both
             alignedOld.append(oldLines[oldIdx]);
             alignedNew.append(newLines[newIdx]);
             oldIdx++;
             newIdx++;
         }
-        // If old is done, add remaining new lines with empty old lines
         else if (oldIdx >= oldLines.size() && newIdx < newLines.size()) {
-            alignedOld.append("");  // Empty line in old
+            // Old exhausted - add remaining new lines
+            alignedOld.append("");
             alignedNew.append(newLines[newIdx]);
             newIdx++;
         }
-        // If new is done, add remaining old lines with empty new lines
         else if (newIdx >= newLines.size() && oldIdx < oldLines.size()) {
+            // New exhausted - add remaining old lines
             alignedOld.append(oldLines[oldIdx]);
-            alignedNew.append("");  // Empty line in new
+            alignedNew.append("");
             oldIdx++;
         }
-        // Both have content but don't match - check which side to advance
         else {
-            // Look ahead to find matching lines
+            // Both have content but don't match - look ahead
             int oldLookAhead = -1;
             int newLookAhead = -1;
             
@@ -200,21 +207,19 @@ void FileDiffDialog::highlightDifferences(const QString& oldContent, const QStri
             }
             
             if (oldLookAhead >= 0 && newLookAhead >= 0) {
-                // Insert empty lines on the side that has fewer lines until match
+                // Found match - insert padding
                 if (oldLookAhead < newLookAhead) {
-                    // More lines added in new - insert empties in old
                     for (int i = 0; i < newLookAhead; i++) {
                         if (i < oldLookAhead) {
                             alignedOld.append(oldLines[oldIdx++]);
                         } else {
-                            alignedOld.append("");  // Empty line in old
+                            alignedOld.append("");
                         }
                         if (newIdx < newLines.size()) {
                             alignedNew.append(newLines[newIdx++]);
                         }
                     }
                 } else {
-                    // More lines removed from old - insert empties in new
                     for (int i = 0; i < oldLookAhead; i++) {
                         if (oldIdx < oldLines.size()) {
                             alignedOld.append(oldLines[oldIdx++]);
@@ -222,117 +227,104 @@ void FileDiffDialog::highlightDifferences(const QString& oldContent, const QStri
                         if (i < newLookAhead) {
                             alignedNew.append(newLines[newIdx++]);
                         } else {
-                            alignedNew.append("");  // Empty line in new
+                            alignedNew.append("");
                         }
                     }
                 }
             } else {
-                // No match found within lookahead window
-                // Check if one side ran out of lines
+                // No match found - treat as modification or separate add/remove
                 bool oldHasMore = (oldIdx < oldLines.size());
                 bool newHasMore = (newIdx < newLines.size());
                 
                 if (oldHasMore && newHasMore) {
-                    // Both have lines - check if they're similar enough to be "modified"
                     QString oldLine = oldLines[oldIdx].trimmed();
                     QString newLine = newLines[newIdx].trimmed();
                     
-                    // If lines are very different or one is empty, treat as separate add/remove
                     if (oldLine.isEmpty() || newLine.isEmpty() || 
                         (oldLine != newLine && oldLine.length() > 3 && newLine.length() > 3)) {
-                        // Treat as removal + addition (separate rows)
+                        // Separate rows
                         alignedOld.append(oldLines[oldIdx++]);
-                        alignedNew.append("");  // Empty on new side
-                        
-                        // Don't advance newIdx yet, handle in next iteration
+                        alignedNew.append("");
                     } else {
-                        // Similar enough - treat as modified (same row)
+                        // Same row (modified)
                         alignedOld.append(oldLines[oldIdx++]);
                         alignedNew.append(newLines[newIdx++]);
                     }
                 } else if (oldHasMore) {
-                    // Only old has more - removal
                     alignedOld.append(oldLines[oldIdx++]);
                     alignedNew.append("");
                 } else if (newHasMore) {
-                    // Only new has more - addition
                     alignedOld.append("");
                     alignedNew.append(newLines[newIdx++]);
                 } else {
-                    // Both ran out (shouldn't happen but handle it)
                     break;
                 }
             }
         }
     }
     
-    // Verify alignment - both should have same number of lines
-    if (alignedOld.size() != alignedNew.size()) {
-        // Pad the shorter one with empty lines
-        while (alignedOld.size() < alignedNew.size()) {
-            alignedOld.append("");
-        }
-        while (alignedNew.size() < alignedOld.size()) {
-            alignedNew.append("");
-        }
+    // Ensure alignment
+    while (alignedOld.size() < alignedNew.size()) {
+        alignedOld.append("");
+    }
+    while (alignedNew.size() < alignedOld.size()) {
+        alignedNew.append("");
     }
     
-    // Update display with aligned content
+    // Batch update for performance
+    m_oldContentEdit->setUpdatesEnabled(false);
+    m_newContentEdit->setUpdatesEnabled(false);
+    
     m_oldContentEdit->setPlainText(alignedOld.join('\n'));
     m_newContentEdit->setPlainText(alignedNew.join('\n'));
     
-    // Now work with the aligned versions
-    oldLines = alignedOld;
-    newLines = alignedNew;
+    // Apply highlighting
+    applyHighlighting(alignedOld, alignedNew);
     
-    // Define highlight colors for different types of changes
-    QColor redBg(220, 38, 38, 60);      // Red - line removed or empty on old side
-    QColor greenBg(34, 197, 94, 60);    // Green - line added or empty on new side
-    QColor orangeBg(251, 140, 0, 60);   // Orange - line modified
-    QColor darkBg(30, 30, 30);          // Dark - unchanged
+    m_oldContentEdit->setUpdatesEnabled(true);
+    m_newContentEdit->setUpdatesEnabled(true);
+}
+
+void FileDiffDialog::applyHighlighting(const QStringList& oldLines, const QStringList& newLines)
+{
+    QColor redBg(220, 38, 38, 60);
+    QColor greenBg(34, 197, 94, 60);
+    QColor orangeBg(251, 140, 0, 60);
+    QColor darkBg(30, 30, 30);
     
-    // Since content is now aligned, we can compare line-by-line
     QTextCursor oldCursor(m_oldContentEdit->document());
     QTextCursor newCursor(m_newContentEdit->document());
     
     oldCursor.movePosition(QTextCursor::Start);
     newCursor.movePosition(QTextCursor::Start);
     
-    for (int i = 0; i < qMax(oldLines.size(), newLines.size()); ++i) {
-        QString oldLine = (i < oldLines.size()) ? oldLines[i] : "";
-        QString newLine = (i < newLines.size()) ? newLines[i] : "";
+    for (int i = 0; i < oldLines.size(); ++i) {
+        QString oldLine = oldLines[i];
+        QString newLine = i < newLines.size() ? newLines[i] : "";
         
-        // Determine the type of difference
         bool oldEmpty = oldLine.isEmpty();
         bool newEmpty = newLine.isEmpty();
         bool linesMatch = (oldLine == newLine);
         
         // Highlight old content line
-        if (i < oldLines.size()) {
-            oldCursor.select(QTextCursor::LineUnderCursor);
-            QTextCharFormat oldFormat;
-            
-            if (oldEmpty && !newEmpty) {
-                // Empty on old side, content on new side = RED empty placeholder
-                oldFormat.setBackground(QBrush(redBg));
-            } else if (!oldEmpty && newEmpty) {
-                // Content on old side, empty on new side = RED removed
-                oldFormat.setBackground(QBrush(redBg));
-            } else if (linesMatch) {
-                // Lines match exactly = unchanged
-                oldFormat.setBackground(QBrush(darkBg));
-            } else if (!oldEmpty && !newEmpty) {
-                // Both have content but different = modified ORANGE
-                oldFormat.setBackground(QBrush(orangeBg));
-            } else {
-                // Both empty - unchanged
-                oldFormat.setBackground(QBrush(darkBg));
-            }
-            
-            oldCursor.mergeCharFormat(oldFormat);
-            oldCursor.clearSelection();
-            oldCursor.movePosition(QTextCursor::NextBlock);
+        oldCursor.select(QTextCursor::LineUnderCursor);
+        QTextCharFormat oldFormat;
+        
+        if (oldEmpty && !newEmpty) {
+            oldFormat.setBackground(QBrush(redBg));
+        } else if (!oldEmpty && newEmpty) {
+            oldFormat.setBackground(QBrush(redBg));
+        } else if (linesMatch) {
+            oldFormat.setBackground(QBrush(darkBg));
+        } else if (!oldEmpty && !newEmpty) {
+            oldFormat.setBackground(QBrush(orangeBg));
+        } else {
+            oldFormat.setBackground(QBrush(darkBg));
         }
+        
+        oldCursor.mergeCharFormat(oldFormat);
+        oldCursor.clearSelection();
+        oldCursor.movePosition(QTextCursor::NextBlock);
         
         // Highlight new content line
         if (i < newLines.size()) {
@@ -340,19 +332,14 @@ void FileDiffDialog::highlightDifferences(const QString& oldContent, const QStri
             QTextCharFormat newFormat;
             
             if (newEmpty && !oldEmpty) {
-                // Empty on new side, content on old side = GREEN empty placeholder
                 newFormat.setBackground(QBrush(greenBg));
             } else if (!newEmpty && oldEmpty) {
-                // Content on new side, empty on old side = GREEN added
                 newFormat.setBackground(QBrush(greenBg));
             } else if (linesMatch) {
-                // Lines match exactly = unchanged
                 newFormat.setBackground(QBrush(darkBg));
             } else if (!oldEmpty && !newEmpty) {
-                // Both have content but different = modified ORANGE
                 newFormat.setBackground(QBrush(orangeBg));
             } else {
-                // Both empty - unchanged
                 newFormat.setBackground(QBrush(darkBg));
             }
             

@@ -43,6 +43,7 @@ private slots:
 
 private:
     void highlightDifferences(const QString& oldContent, const QString& newContent);
+    void applyHighlighting(const QStringList& oldLines, const QStringList& newLines);
     QString readFileContent(const QString& filePath);
 
     CustomTextEdit* m_oldContentEdit;

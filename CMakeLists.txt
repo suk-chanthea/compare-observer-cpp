@@ -120,18 +120,32 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# Compiler warnings
+# Compiler warnings and optimizations
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE 
         /W4                 # Warning level 4
         /WX-                # Don't treat warnings as errors
         /permissive-        # Standards conformance
         /Zc:__cplusplus     # Enable __cplusplus macro
+        /O2                 # Optimize for speed (Release)
+        /Ob2                # Inline expansion
     )
+    
+    # Enable optimization in Release builds
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_compile_options(${PROJECT_NAME} PRIVATE /GL)  # Whole program optimization
+        target_link_options(${PROJECT_NAME} PRIVATE /LTCG)   # Link time code generation
+    endif()
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE 
         -Wall -Wextra -Wpedantic
+        -O2  # Optimize for speed
     )
+    
+    # Enable LTO in Release builds
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        set_property(TARGET ${PROJECT_NAME} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
 endif()
 
 # Installation rules

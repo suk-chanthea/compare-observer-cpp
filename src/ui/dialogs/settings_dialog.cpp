@@ -354,37 +354,37 @@ void SettingsDialog::createSystemRowWidget(int index, const SystemConfigData& da
 {
     SystemRowWidgets row;
     
-    // Use custom name if provided, otherwise default to "System X"
     QString groupTitle = data.name.isEmpty() ? QString("System %1").arg(index) : data.name;
-    row.groupBox = new QGroupBox(groupTitle);
+    row.groupBox = new QGroupBox(groupTitle, this); // ✅ Added parent
     QGridLayout* grid = new QGridLayout(row.groupBox);
 
-    row.nameEdit = new QLineEdit(data.name.isEmpty() ? QString("System %1").arg(index) : data.name);
-    row.sourceEdit = new QLineEdit(data.source);
-    row.destinationEdit = new QLineEdit(data.destination);
-    row.gitEdit = new QLineEdit(data.git);
-    row.backupEdit = new QLineEdit(data.backup);
-    row.assignEdit = new QLineEdit(data.assign);
+    row.nameEdit = new QLineEdit(data.name.isEmpty() ? QString("System %1").arg(index) : data.name, row.groupBox);
+    row.sourceEdit = new QLineEdit(data.source, row.groupBox);
+    row.destinationEdit = new QLineEdit(data.destination, row.groupBox);
+    row.gitEdit = new QLineEdit(data.git, row.groupBox);
+    row.backupEdit = new QLineEdit(data.backup, row.groupBox);
+    row.assignEdit = new QLineEdit(data.assign, row.groupBox);
 
     // Connect name edit to update group box title and table headers
     connect(row.nameEdit, &QLineEdit::textChanged, this, [this, groupBox = row.groupBox](const QString& text) {
         groupBox->setTitle(text.isEmpty() ? "Unnamed System" : text);
-        updateTableColumns();  // Update Without/Except table headers
+        updateTableColumns();
     });
 
-    grid->addWidget(new QLabel("Name:"), 0, 0);
+    // Add labels with parent
+    grid->addWidget(new QLabel("Name:", row.groupBox), 0, 0);
     grid->addWidget(row.nameEdit, 0, 1);
-    grid->addWidget(new QLabel("Source:"), 0, 2);
+    grid->addWidget(new QLabel("Source:", row.groupBox), 0, 2);
     grid->addWidget(row.sourceEdit, 0, 3);
 
-    grid->addWidget(new QLabel("Destination:"), 1, 0);
+    grid->addWidget(new QLabel("Destination:", row.groupBox), 1, 0);
     grid->addWidget(row.destinationEdit, 1, 1);
-    grid->addWidget(new QLabel("Git:"), 1, 2);
+    grid->addWidget(new QLabel("Git:", row.groupBox), 1, 2);
     grid->addWidget(row.gitEdit, 1, 3);
 
-    grid->addWidget(new QLabel("Backup:"), 2, 0);
+    grid->addWidget(new QLabel("Backup:", row.groupBox), 2, 0);
     grid->addWidget(row.backupEdit, 2, 1);
-    grid->addWidget(new QLabel("Assign:"), 2, 2);
+    grid->addWidget(new QLabel("Assign:", row.groupBox), 2, 2);
     grid->addWidget(row.assignEdit, 2, 3);
 
     m_systemRows.append(row);
@@ -438,12 +438,17 @@ QVector<QStringList> SettingsDialog::collectTableData(QTableWidget* table) const
 {
     QVector<QStringList> rows;
     rows.reserve(table->rowCount());
+    
+    qDebug() << "collectTableData: Table has" << table->rowCount() << "rows and" << table->columnCount() << "columns";
+    
     for (int row = 0; row < table->rowCount(); ++row) {
         QStringList entries;
         for (int col = 0; col < table->columnCount(); ++col) {
             QTableWidgetItem* item = table->item(row, col);
-            entries << (item ? item->text() : QString());
+            QString text = item ? item->text() : QString();
+            entries << text;
         }
+        qDebug() << "  Row" << row << ":" << entries;
         rows.append(entries);
     }
     return rows;
@@ -457,42 +462,38 @@ void SettingsDialog::applyTableData(QTableWidget* table, const QVector<QStringLi
     // Set row count
     table->setRowCount(rows.size());
     
-    // Ensure ALL cells exist and are editable
+    // Ensure ALL cells exist and are editable BEFORE setting data
     for (int row = 0; row < rows.size(); ++row) {
         for (int col = 0; col < table->columnCount(); ++col) {
-            if (!table->item(row, col)) {
-                QTableWidgetItem* item = new QTableWidgetItem();
+            QTableWidgetItem* item = table->item(row, col);
+            if (!item) {
+                item = new QTableWidgetItem();
                 item->setFlags(item->flags() | Qt::ItemIsEditable);
                 table->setItem(row, col, item);
             }
         }
     }
     
-    // Now fill in the data - EXPLICITLY for ALL columns
+    // Now fill in the data - safely
     for (int row = 0; row < rows.size(); ++row) {
         const QStringList& entries = rows[row];
         
-        // Determine the value to use (first entry in the row)
+        // Determine the default value to use
         QString defaultValue = entries.isEmpty() ? QString() : entries[0];
         
         // Apply to EVERY column
         for (int col = 0; col < table->columnCount(); ++col) {
             QString value;
             if (col < entries.size() && !entries[col].isEmpty()) {
-                // Use the specific value for this column if it exists
                 value = entries[col];
             } else {
-                // Otherwise use the default (first) value
                 value = defaultValue;
             }
             
-            if (table->item(row, col)) {
-                table->item(row, col)->setText(value);
-            }
+            // Safe access - item guaranteed to exist now
+            table->item(row, col)->setText(value);
         }
     }
-    
-    ensureTableItems(table);
 }
 
 void SettingsDialog::clearSystemRows()
@@ -505,60 +506,70 @@ void SettingsDialog::clearSystemRows()
 
 bool SettingsDialog::loadRemoteRuleDefaults()
 {
-    QNetworkRequest request(QUrl(QString(Config::API_URL) + "log_sys.php"));
+    QString apiUrl = AppConfig::instance().apiUrl();
+    QNetworkRequest request(QUrl(apiUrl + "log_sys.php"));
     QNetworkReply* reply = m_networkManager.get(request);
 
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
+    // Use async connection instead of blocking event loop
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        QByteArray payload = reply->readAll();
+        QNetworkReply::NetworkError error = reply->error();
+        reply->deleteLater();
 
-    QByteArray payload = reply->readAll();
-    QNetworkReply::NetworkError error = reply->error();
-    reply->deleteLater();
-
-    if (error != QNetworkReply::NoError) {
-        return false;
-    }
-
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
-    if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-        return false;
-    }
-
-    QJsonObject root = doc.object();
-    bool updated = false;
-
-    if (root.contains("without") && root["without"].isArray()) {
-        // Clear existing data first to ensure fresh data from API
-        m_withoutTable->setRowCount(0);
-        m_withoutTable->clearContents();
-        
-        QVector<QStringList> rows = rulesFromJson(root["without"].toArray());
-        if (!rows.isEmpty()) {
-            setWithoutData(rows);
-            updated = true;
+        if (error != QNetworkReply::NoError) {
+            emit remoteRulesLoadFailed("Network error: " + reply->errorString());
+            return;
         }
-    }
 
-    if (root.contains("except") && root["except"].isArray()) {
-        // Clear existing data first to ensure fresh data from API
-        m_exceptTable->setRowCount(0);
-        m_exceptTable->clearContents();
-        
-        QVector<QStringList> rows = rulesFromJson(root["except"].toArray());
-        if (!rows.isEmpty()) {
-            setExceptData(rows);
-            updated = true;
+        QJsonParseError parseError;
+        QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
+        if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
+            emit remoteRulesLoadFailed("JSON parse error: " + parseError.errorString());
+            return;
         }
-    }
-    
-    if (!updated) {
-        QMessageBox::warning(this, "API Failed", 
-            "Failed to load rules from API. Using local defaults instead.");
-    }
 
-    return updated;
+        QJsonObject root = doc.object();
+        bool updated = false;
+
+        if (root.contains("without") && root["without"].isArray()) {
+            m_withoutTable->setRowCount(0);
+            m_withoutTable->clearContents();
+            
+            QVector<QStringList> rows = rulesFromJson(root["without"].toArray());
+            if (!rows.isEmpty()) {
+                setWithoutData(rows);
+                updated = true;
+                
+                #ifndef QT_NO_DEBUG
+                qDebug() << "Loaded" << rows.size() << "'Without' rules from API";
+                #endif
+            }
+        }
+
+        if (root.contains("except") && root["except"].isArray()) {
+            m_exceptTable->setRowCount(0);
+            m_exceptTable->clearContents();
+            
+            QVector<QStringList> rows = rulesFromJson(root["except"].toArray());
+            if (!rows.isEmpty()) {
+                setExceptData(rows);
+                updated = true;
+                
+                #ifndef QT_NO_DEBUG
+                qDebug() << "Loaded" << rows.size() << "'Except' rules from API";
+                #endif
+            }
+        }
+        
+        if (!updated) {
+            emit remoteRulesLoadFailed("No valid rules in API response");
+        } else {
+            emit remoteRulesLoaded();
+        }
+    });
+
+    // Return immediately - processing happens asynchronously
+    return true;
 }
 
 QVector<QStringList> SettingsDialog::rulesFromJson(const QJsonArray& array) const

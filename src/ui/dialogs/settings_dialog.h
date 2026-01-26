@@ -71,6 +71,10 @@ public:
     void loadExceptDefaults();
     bool loadRemoteRuleDefaults();
 
+signals:
+    void remoteRulesLoaded();
+    void remoteRulesLoadFailed(const QString& error);
+
 private slots:
     void addSystem();
     void removeSystem();

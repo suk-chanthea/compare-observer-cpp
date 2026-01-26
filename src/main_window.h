@@ -18,6 +18,7 @@ class QLineEdit;
 class QWidget;
 class QVBoxLayout;
 class QCheckBox;
+class QProgressDialog;
 class WatcherThread;
 class TelegramService;
 class FileWatcherTable;
@@ -78,6 +79,26 @@ private:
     void updateStatusLabel();
     QVector<int> getSelectedSystemIndices() const;
     void onSystemSelectionChanged();
+
+    struct CopyOperationResult {
+        int successCount = 0;
+        int failCount = 0;
+        QStringList copiedFiles;
+    };
+    
+    bool validateCopyRequest(int systemIndex, const QStringList& files);
+    CopyOperationResult copyFilesToDestinations(int systemIndex, const QStringList& files);
+    bool copyFileToDestination(const QString& sourceFile, const QString& destPath);
+    bool backupOldFileFromGit(const QString& gitPath, const QString& relativePath, int systemIndex);
+    void sendTelegramNotification(int systemIndex, const QStringList& files, const QString& description);
+    void cleanupAfterSuccessfulCopy(int systemIndex);
+    QString formatFileListForTelegram(int systemIndex, const QStringList& files);
+    bool isFileInWithoutList(int systemIndex, const QString& filePath);
+    void showProgressDialog(const QString& title, int max);
+    void updateProgress(int value);
+    void closeProgressDialog();
+    
+    QProgressDialog* m_progressDialog = nullptr;
 
     // UI Components
     QPushButton* m_watchToggleButton;
