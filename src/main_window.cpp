@@ -29,6 +29,7 @@
 #include <QTextEdit>
 #include <QCheckBox>
 #include <QProgressDialog>
+#include <QCoreApplication>
 
 FileWatcherApp::FileWatcherApp(QWidget* parent)
     : QMainWindow(parent),
@@ -1086,6 +1087,17 @@ void FileWatcherApp::captureBaselineForSystem(int systemIndex,
                                               const QStringList& excludedFolders,
                                               const QStringList& excludedFiles)
 {
+    // This is a wrapper for backward compatibility
+    captureBaselineForSystemWithProgress(systemIndex, config, excludedFolders, excludedFiles, 0, 0);
+}
+
+void FileWatcherApp::captureBaselineForSystemWithProgress(int systemIndex,
+                                                          const SettingsDialog::SystemConfigData& config,
+                                                          const QStringList& excludedFolders,
+                                                          const QStringList& excludedFiles,
+                                                          int cumulativeProcessed,
+                                                          int totalFilesAllSystems)
+{
     if (systemIndex < 0 || systemIndex >= m_systemPanels.size()) {
         return;
     }
@@ -1098,13 +1110,36 @@ void FileWatcherApp::captureBaselineForSystem(int systemIndex,
         return;
     }
 
+    // Capture baseline with cumulative progress tracking
     QDirIterator it(config.source, QDir::Files | QDir::NoSymLinks | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
     int fileCount = 0;
+    int processedFiles = 0;
 
     while (it.hasNext()) {
         QString path = it.next();
         if (isPathExcluded(path, excludedFolders, excludedFiles)) {
             continue;
+        }
+
+        processedFiles++;
+        int totalProcessed = cumulativeProcessed + processedFiles;
+        
+        // Update progress every 10 files or on last file
+        if (processedFiles % 10 == 0) {
+            updateProgress(totalProcessed);
+            
+            // Process events to keep UI responsive
+            QCoreApplication::processEvents();
+            
+            // Log progress every 100 files
+            if (totalProcessed % 100 == 0) {
+                int percentage = totalFilesAllSystems > 0 ? (totalProcessed * 100) / totalFilesAllSystems : 0;
+                m_logDialog->addLog(QString("Overall progress: %1% (%2/%3) - Processing %4...")
+                    .arg(percentage)
+                    .arg(totalProcessed)
+                    .arg(totalFilesAllSystems)
+                    .arg(getSystemName(systemIndex)));
+            }
         }
 
         QString content = readFileContent(path);
@@ -1114,9 +1149,13 @@ void FileWatcherApp::captureBaselineForSystem(int systemIndex,
             ++fileCount;
         }
     }
+    
+    // Final progress update for this system
+    updateProgress(cumulativeProcessed + processedFiles);
+    QCoreApplication::processEvents();
 
     if (fileCount > 0) {
-        m_logDialog->addLog(QString("%1: Captured baseline for %2 files").arg(getSystemName(systemIndex)).arg(fileCount));
+        m_logDialog->addLog(QString("%1: ✓ Captured baseline for %2 files").arg(getSystemName(systemIndex)).arg(fileCount));
     }
 }
 
@@ -1358,8 +1397,61 @@ void FileWatcherApp::startWatching()
     }
 
     bool startedAny = false;
-
+    
+    // First pass: Count total files across all selected systems
+    m_logDialog->addLog("=== Counting files for all systems ===");
+    int totalFilesAllSystems = 0;
+    QVector<int> systemFileCounts;
+    
     for (int i : selectedIndices) {
+        if (i >= m_systemConfigs.size() || i >= m_systemPanels.size()) {
+            systemFileCounts.append(0);
+            continue;
+        }
+
+        const auto& config = m_systemConfigs.at(i);
+        if (config.source.isEmpty()) {
+            systemFileCounts.append(0);
+            continue;
+        }
+        
+        QStringList excludedFolders;
+        QStringList excludedFiles = ruleListForSystem(m_exceptRules, i);
+        
+        // Count files for this system
+        QDirIterator countIt(config.source, QDir::Files | QDir::NoSymLinks | QDir::NoDotAndDotDot, QDirIterator::Subdirectories);
+        int systemFileCount = 0;
+        
+        while (countIt.hasNext()) {
+            QString path = countIt.next();
+            if (!isPathExcluded(path, excludedFolders, excludedFiles)) {
+                systemFileCount++;
+            }
+        }
+        
+        systemFileCounts.append(systemFileCount);
+        totalFilesAllSystems += systemFileCount;
+        m_logDialog->addLog(QString("%1: %2 files found").arg(getSystemName(i)).arg(systemFileCount));
+    }
+    
+    if (totalFilesAllSystems == 0) {
+        m_logDialog->addLog("No files found in any system");
+        m_watchToggleButton->setText("Start Watching");
+        m_watchToggleButton->setEnabled(true);
+        QMessageBox::warning(this, "No Files", "No files found in any selected system source directories.");
+        return;
+    }
+    
+    // Show single progress dialog for all systems combined
+    m_logDialog->addLog(QString("=== Capturing baseline for %1 total files ===").arg(totalFilesAllSystems));
+    showProgressDialog(QString("Capturing Baseline (%1 files) - Please Wait...").arg(totalFilesAllSystems), totalFilesAllSystems);
+    
+    int processedSoFar = 0;
+
+    // Second pass: Capture baseline for each system
+    for (int idx = 0; idx < selectedIndices.size(); ++idx) {
+        int i = selectedIndices[idx];
+        
         if (i >= m_systemConfigs.size() || i >= m_systemPanels.size()) {
             continue;
         }
@@ -1379,7 +1471,12 @@ void FileWatcherApp::startWatching()
         QStringList excludedFolders;  // Empty - not used for exclusion
         QStringList excludedFiles = ruleListForSystem(m_exceptRules, i);
 
-        captureBaselineForSystem(i, config, excludedFolders, excludedFiles);
+        m_logDialog->addLog(QString("=== %1: Processing %2 files ===").arg(getSystemName(i)).arg(systemFileCounts[idx]));
+        
+        // Capture baseline with cumulative progress
+        captureBaselineForSystemWithProgress(i, config, excludedFolders, excludedFiles, processedSoFar, totalFilesAllSystems);
+        
+        processedSoFar += systemFileCounts[idx];
 
         WatcherThread* watcher = new WatcherThread(i, getSystemName(i), config.source, excludedFolders, excludedFiles);
         panel.watcher = watcher;
@@ -1410,6 +1507,9 @@ void FileWatcherApp::startWatching()
         watcher->start();
         startedAny = true;
     }
+    
+    // Close progress dialog after all systems are processed
+    closeProgressDialog();
 
     if (startedAny) {
         m_isWatching = true;
@@ -1422,7 +1522,7 @@ void FileWatcherApp::startWatching()
         }
         
         updateStatusLabel();
-        m_logDialog->addLog("File watching started successfully");
+        m_logDialog->addLog("✓ File watching started successfully - All systems ready");
     } else {
         m_watchToggleButton->setText("Start Watching");
         m_watchToggleButton->setEnabled(true);  // Re-enable after failed start

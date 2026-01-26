@@ -70,6 +70,12 @@ private:
                                   const SettingsDialog::SystemConfigData& config,
                                   const QStringList& excludedFolders,
                                   const QStringList& excludedFiles);
+    void captureBaselineForSystemWithProgress(int systemIndex,
+                                              const SettingsDialog::SystemConfigData& config,
+                                              const QStringList& excludedFolders,
+                                              const QStringList& excludedFiles,
+                                              int cumulativeProcessed,
+                                              int totalFilesAllSystems);
     bool isPathExcluded(const QString& absolutePath,
                         const QStringList& excludedFolders,
                         const QStringList& excludedFiles) const;
