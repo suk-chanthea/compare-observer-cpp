@@ -861,19 +861,29 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
     // Get all files from the watcher table first
     QStringList filesToAssign = panel.table->getAllFileKeys();
     
+    qDebug() << "handleAssignToRequested: System" << systemIndex << "has" << filesToAssign.size() << "files";
+    m_logDialog->addLog(QString("%1: Checking files to assign...").arg(getSystemName(systemIndex)));
+    
     if (filesToAssign.isEmpty()) {
+        m_logDialog->addLog(QString("%1: No files in watcher list").arg(getSystemName(systemIndex)));
+        qDebug() << "Assign failed: No files to assign";
         QMessageBox::warning(this, "No Files", 
-                            QString("%1: No files in watcher list to assign.").arg(getSystemName(systemIndex)));
+                            QString("%1: No files in watcher list to assign.\n\nPlease make some file changes first and they will appear in the watcher table.")
+                            .arg(getSystemName(systemIndex)));
         return;
     }
     
     // Check if assign path is configured (folder will be created automatically)
     if (config.assign.isEmpty()) {
+        m_logDialog->addLog(QString("%1: Assign path not configured").arg(getSystemName(systemIndex)));
+        qDebug() << "Assign failed: No assign path configured";
         QMessageBox::warning(this, "No Assign Path", 
                             QString("%1: Assign path not configured.\n\nPlease set the Assign path in Settings.")
                             .arg(getSystemName(systemIndex)));
         return;
     }
+    
+    m_logDialog->addLog(QString("%1: Opening assign dialog for %2 files...").arg(getSystemName(systemIndex), QString::number(filesToAssign.size())));
     
     // Create custom dialog for name and description
     QDialog dialog(this);
@@ -1672,26 +1682,38 @@ void FileWatcherApp::closeEvent(QCloseEvent* event)
 }
 bool FileWatcherApp::validateCopyRequest(int systemIndex, const QStringList& files)
 {
+    qDebug() << "validateCopyRequest: systemIndex=" << systemIndex << "files=" << files;
+    
     if (systemIndex < 0 || systemIndex >= m_systemPanels.size() || 
         systemIndex >= m_systemConfigs.size()) {
         m_logDialog->addLog("Error: Invalid system index");
+        qDebug() << "Validation failed: Invalid system index";
         return false;
     }
     
     if (files.isEmpty()) {
+        m_logDialog->addLog(QString("%1: No files to copy").arg(getSystemName(systemIndex)));
+        qDebug() << "Validation failed: No files to copy";
         QMessageBox::warning(this, "No Files", 
-            QString("%1: No files to copy.").arg(getSystemName(systemIndex)));
-        return false;
-    }
-    
-    const auto& config = m_systemConfigs[systemIndex];
-    if (config.destination.isEmpty() && config.git.isEmpty() && config.backup.isEmpty()) {
-        QMessageBox::warning(this, "No Paths Configured", 
-            QString("%1: No destination paths configured.\n\nConfigure at least one path in Settings.")
+            QString("%1: No files to copy.\n\nPlease make some file changes first and they will appear in the watcher table.")
             .arg(getSystemName(systemIndex)));
         return false;
     }
     
+    const auto& config = m_systemConfigs[systemIndex];
+    qDebug() << "Config - destination:" << config.destination << "git:" << config.git << "backup:" << config.backup;
+    
+    if (config.destination.isEmpty() && config.git.isEmpty() && config.backup.isEmpty()) {
+        m_logDialog->addLog(QString("%1: No destination paths configured").arg(getSystemName(systemIndex)));
+        qDebug() << "Validation failed: No paths configured";
+        QMessageBox::warning(this, "No Paths Configured", 
+            QString("%1: No destination paths configured.\n\nConfigure at least one path in Settings:\n- Destination Path\n- Git Path\n- Backup Path")
+            .arg(getSystemName(systemIndex)));
+        return false;
+    }
+    
+    qDebug() << "Validation passed!";
+    m_logDialog->addLog(QString("%1: Validation passed - %2 files ready").arg(getSystemName(systemIndex), QString::number(files.size())));
     return true;
 }
 FileWatcherApp::CopyOperationResult FileWatcherApp::copyFilesToDestinations(int systemIndex, const QStringList& files)
