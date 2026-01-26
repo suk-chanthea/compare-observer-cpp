@@ -30,6 +30,7 @@
 #include <QCheckBox>
 #include <QProgressDialog>
 #include <QCoreApplication>
+#include <QTimer>
 
 FileWatcherApp::FileWatcherApp(QWidget* parent)
     : QMainWindow(parent),
@@ -738,8 +739,31 @@ void FileWatcherApp::handleCopyRequested(int systemIndex)
     
     CopyOperationResult result = copyFilesToDestinations(systemIndex, files);
     
-    if (result.successCount > 0) {
+    // Show result message (auto-closes in 3 seconds)
+    if (result.successCount > 0 && result.failCount == 0) {
+        // Complete success
         cleanupAfterSuccessfulCopy(systemIndex);
+        showAutoCloseMessage("Copy Complete", 
+            QString("✓ Successfully copied %1 file(s)\n\n%2")
+            .arg(result.successCount)
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Information);
+    } else if (result.successCount > 0 && result.failCount > 0) {
+        // Partial success
+        cleanupAfterSuccessfulCopy(systemIndex);
+        showAutoCloseMessage("Copy Completed with Errors", 
+            QString("⚠ Copied %1 file(s) successfully\n✗ %2 file(s) failed\n\n%3\n\nCheck View Logs for details.")
+            .arg(result.successCount)
+            .arg(result.failCount)
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Warning);
+    } else {
+        // Complete failure
+        showAutoCloseMessage("Copy Failed", 
+            QString("✗ Failed to copy all %1 file(s)\n\n%2\n\nCheck View Logs for details.")
+            .arg(files.size())
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Critical);
     }
 }
 
@@ -766,8 +790,9 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
     
     CopyOperationResult result = copyFilesToDestinations(systemIndex, files);
     
-    if (result.successCount > 0) {
-        // Send Telegram notification
+    // Show result message (auto-closes in 3 seconds)
+    if (result.successCount > 0 && result.failCount == 0) {
+        // Complete success - send telegram and cleanup
         QString description = panel.descriptionEdit->text().trimmed();
         if (description.isEmpty()) {
             description = getSystemName(systemIndex);
@@ -775,6 +800,35 @@ void FileWatcherApp::handleCopySendRequested(int systemIndex)
         
         sendTelegramNotification(systemIndex, result.copiedFiles, description);
         cleanupAfterSuccessfulCopy(systemIndex);
+        
+        showAutoCloseMessage("Copy & Send Complete", 
+            QString("✓ Successfully copied %1 file(s)\n✓ Telegram notification sent\n\n%2")
+            .arg(result.successCount)
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Information);
+    } else if (result.successCount > 0 && result.failCount > 0) {
+        // Partial success - still send telegram for successful files
+        QString description = panel.descriptionEdit->text().trimmed();
+        if (description.isEmpty()) {
+            description = getSystemName(systemIndex);
+        }
+        
+        sendTelegramNotification(systemIndex, result.copiedFiles, description);
+        cleanupAfterSuccessfulCopy(systemIndex);
+        
+        showAutoCloseMessage("Copy & Send Completed with Errors", 
+            QString("⚠ Copied %1 file(s) successfully\n✗ %2 file(s) failed\n✓ Telegram notification sent\n\n%3\n\nCheck View Logs for details.")
+            .arg(result.successCount)
+            .arg(result.failCount)
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Warning);
+    } else {
+        // Complete failure
+        showAutoCloseMessage("Copy & Send Failed", 
+            QString("✗ Failed to copy all %1 file(s)\n✗ Telegram notification not sent\n\n%2\n\nCheck View Logs for details.")
+            .arg(files.size())
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Critical);
     }
 }
 
@@ -1037,6 +1091,34 @@ void FileWatcherApp::handleAssignToRequested(int systemIndex)
         QStringList excludedFiles = ruleListForSystem(m_exceptRules, systemIndex);
         captureBaselineForSystem(systemIndex, config, excludedFolders, excludedFiles);
         m_logDialog->addLog(QString("%1: Baseline updated to current state").arg(getSystemName(systemIndex)));
+    }
+    
+    // Show result message (auto-closes in 3 seconds)
+    if (successCount > 0 && failCount == 0) {
+        // Complete success
+        showAutoCloseMessage("Assign Complete", 
+            QString("✓ Successfully assigned %1 file(s)\n\n📁 %2\n\nFolder: %3/%4")
+            .arg(successCount)
+            .arg(getSystemName(systemIndex))
+            .arg(folderName)
+            .arg(dateTimeFolder),
+            QMessageBox::Information);
+    } else if (successCount > 0 && failCount > 0) {
+        // Partial success
+        showAutoCloseMessage("Assign Completed with Errors", 
+            QString("⚠ Assigned %1 file(s) successfully\n✗ %2 file(s) failed\n\n📁 Folder: %3/%4\n\nCheck View Logs for details.")
+            .arg(successCount)
+            .arg(failCount)
+            .arg(folderName)
+            .arg(dateTimeFolder),
+            QMessageBox::Warning);
+    } else {
+        // Complete failure
+        showAutoCloseMessage("Assign Failed", 
+            QString("✗ Failed to assign all %1 file(s)\n\n%2\n\nCheck View Logs for details.")
+            .arg(filesToAssign.size())
+            .arg(getSystemName(systemIndex)),
+            QMessageBox::Critical);
     }
 }
 
@@ -2049,4 +2131,30 @@ bool FileWatcherApp::backupOldFileFromGit(const QString& gitPath, const QString&
     
     m_logDialog->addLog(QString("  ✓ Backed up: %1/%2/%3").arg(dateFolder, timeFolder, relativePath));
     return true;
+}
+
+void FileWatcherApp::showAutoCloseMessage(const QString& title, const QString& message, int icon, int milliseconds)
+{
+    QMessageBox* msgBox = new QMessageBox(static_cast<QMessageBox::Icon>(icon), title, message, QMessageBox::NoButton, this);
+    msgBox->setAttribute(Qt::WA_DeleteOnClose);
+    msgBox->setWindowModality(Qt::NonModal);
+    
+    // Set minimum size to make it look nice
+    msgBox->setMinimumWidth(400);
+    
+    // Set styling (using system default background)
+    msgBox->setStyleSheet(
+        "QMessageBox {"
+        "   border-radius: 8px;"
+        "   padding: 16px;"
+        "}"
+        "QLabel {"
+        "   font-size: 13px;"
+        "}"
+    );
+    
+    msgBox->show();
+    
+    // Auto-close after specified milliseconds
+    QTimer::singleShot(milliseconds, msgBox, &QMessageBox::close);
 }

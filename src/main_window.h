@@ -103,6 +103,7 @@ private:
     void showProgressDialog(const QString& title, int max);
     void updateProgress(int value);
     void closeProgressDialog();
+    void showAutoCloseMessage(const QString& title, const QString& message, int icon, int milliseconds = 3000);
     
     QProgressDialog* m_progressDialog = nullptr;
 
