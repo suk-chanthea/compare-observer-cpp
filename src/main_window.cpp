@@ -1,4 +1,5 @@
 #include "main_window.h"
+#include "config.h"
 #include "services/file_watcher.h"
 #include "services/telegram_service.h"
 #include "ui/dialogs/log_dialog.h"
@@ -324,6 +325,7 @@ void FileWatcherApp::loadSettings()
     }
 
     m_settingsDialog->setUsername(m_username);
+    m_settingsDialog->setApiUrl(AppConfig::instance().apiUrl());
     m_settingsDialog->setTelegramToken(m_telegramToken);
     m_settingsDialog->setTelegramChatId(m_telegramChatId);
     m_settingsDialog->setNotificationsEnabled(m_notificationsEnabled);
@@ -1377,6 +1379,7 @@ void FileWatcherApp::onSettingsClicked()
 
     if (m_settingsDialog->exec() == QDialog::Accepted) {
         m_username = m_settingsDialog->getUsername();
+        AppConfig::instance().setApiUrl(m_settingsDialog->getApiUrl());
         m_watchPath = m_settingsDialog->getWatchPath();
         m_telegramToken = m_settingsDialog->getTelegramToken();
         m_telegramChatId = m_settingsDialog->getTelegramChatId();

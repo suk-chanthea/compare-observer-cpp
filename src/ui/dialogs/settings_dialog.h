@@ -34,6 +34,12 @@ public:
     void setUsername(const QString& username);
 
     /**
+     * @brief Gets the API URL setting
+     */
+    QString getApiUrl() const;
+    void setApiUrl(const QString& url);
+
+    /**
      * @brief Gets the watch path setting
      */
     QString getWatchPath() const;
@@ -104,6 +110,7 @@ private:
     QVector<QStringList> rulesFromJson(const QJsonArray& array) const;
 
     QLineEdit* m_usernameEdit;
+    QLineEdit* m_apiUrlEdit;
     QLineEdit* m_tokenEdit;
     QLineEdit* m_chatIdEdit;
     QCheckBox* m_notificationsCheckbox;

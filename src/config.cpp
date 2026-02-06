@@ -2,7 +2,7 @@
 
 // Default configuration values
 namespace {
-    constexpr const char* DEFAULT_API_URL = "https://khmergaming.436bet.com/app/";
+    constexpr const char* DEFAULT_API_URL = "http://khmergaming.436bet.com/app/log_sys.php";
     constexpr bool DEFAULT_DEBUG_MODE = false;
     constexpr qint64 DEFAULT_DUPLICATE_THRESHOLD = 500;
     constexpr int DEFAULT_REFRESH_INTERVAL = 2000;

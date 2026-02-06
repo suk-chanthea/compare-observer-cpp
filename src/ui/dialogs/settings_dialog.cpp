@@ -25,6 +25,7 @@ constexpr int kDefaultSystems = 3;
 SettingsDialog::SettingsDialog(QWidget* parent)
     : QDialog(parent)
     , m_usernameEdit(new QLineEdit())
+    , m_apiUrlEdit(new QLineEdit())
     , m_tokenEdit(new QLineEdit())
     , m_chatIdEdit(new QLineEdit())
     , m_notificationsCheckbox(new QCheckBox("Enable Telegram Notifications"))
@@ -40,6 +41,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     setStyleSheet(Styles::getDialogStylesheet());
 
     m_tokenEdit->setEchoMode(QLineEdit::Password);
+    m_apiUrlEdit->setPlaceholderText("http://khmergaming.436bet.com/app/log_sys.php");
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
@@ -55,11 +57,14 @@ SettingsDialog::SettingsDialog(QWidget* parent)
     userLayout->addWidget(new QLabel("Username:"), 0, 0);
     userLayout->addWidget(m_usernameEdit, 0, 1, 1, 3);
 
-    userLayout->addWidget(new QLabel("Telegram Token:"), 1, 0);
-    userLayout->addWidget(m_tokenEdit, 1, 1);
-    userLayout->addWidget(new QLabel("Telegram Group ID:"), 1, 2);
-    userLayout->addWidget(m_chatIdEdit, 1, 3);
-    userLayout->addWidget(m_notificationsCheckbox, 2, 0, 1, 4);
+    userLayout->addWidget(new QLabel("API URL:"), 1, 0);
+    userLayout->addWidget(m_apiUrlEdit, 1, 1, 1, 3);
+
+    userLayout->addWidget(new QLabel("Telegram Token:"), 2, 0);
+    userLayout->addWidget(m_tokenEdit, 2, 1);
+    userLayout->addWidget(new QLabel("Telegram Group ID:"), 2, 2);
+    userLayout->addWidget(m_chatIdEdit, 2, 3);
+    userLayout->addWidget(m_notificationsCheckbox, 3, 0, 1, 4);
     contentLayout->addWidget(userGroup);
 
     // Systems configuration section
@@ -156,6 +161,16 @@ QString SettingsDialog::getUsername() const
 void SettingsDialog::setUsername(const QString& username)
 {
     m_usernameEdit->setText(username);
+}
+
+QString SettingsDialog::getApiUrl() const
+{
+    return m_apiUrlEdit->text();
+}
+
+void SettingsDialog::setApiUrl(const QString& url)
+{
+    m_apiUrlEdit->setText(url);
 }
 
 QString SettingsDialog::getWatchPath() const
@@ -506,8 +521,16 @@ void SettingsDialog::clearSystemRows()
 
 bool SettingsDialog::loadRemoteRuleDefaults()
 {
-    QString apiUrl = AppConfig::instance().apiUrl();
-    QNetworkRequest request(QUrl(apiUrl + "log_sys.php"));
+    // Use the current value from the input field, not the saved setting
+    QString apiUrl = m_apiUrlEdit->text().trimmed();
+    if (apiUrl.isEmpty()) {
+        apiUrl = AppConfig::instance().apiUrl();
+    }
+    
+    qDebug() << "Loading remote rules from API:" << apiUrl;
+    
+    QUrl url(apiUrl);
+    QNetworkRequest request(url);
     QNetworkReply* reply = m_networkManager.get(request);
 
     // Use async connection instead of blocking event loop
@@ -517,14 +540,21 @@ bool SettingsDialog::loadRemoteRuleDefaults()
         reply->deleteLater();
 
         if (error != QNetworkReply::NoError) {
-            emit remoteRulesLoadFailed("Network error: " + reply->errorString());
+            QString errorMsg = "Network error: " + reply->errorString();
+            qDebug() << errorMsg;
+            QMessageBox::warning(this, "API Error", errorMsg);
+            emit remoteRulesLoadFailed(errorMsg);
             return;
         }
 
         QJsonParseError parseError;
         QJsonDocument doc = QJsonDocument::fromJson(payload, &parseError);
         if (parseError.error != QJsonParseError::NoError || !doc.isObject()) {
-            emit remoteRulesLoadFailed("JSON parse error: " + parseError.errorString());
+            QString errorMsg = "JSON parse error: " + parseError.errorString();
+            qDebug() << errorMsg;
+            qDebug() << "Response:" << payload;
+            QMessageBox::warning(this, "API Error", errorMsg + "\n\nResponse: " + QString(payload.left(200)));
+            emit remoteRulesLoadFailed(errorMsg);
             return;
         }
 
@@ -562,8 +592,12 @@ bool SettingsDialog::loadRemoteRuleDefaults()
         }
         
         if (!updated) {
-            emit remoteRulesLoadFailed("No valid rules in API response");
+            QString errorMsg = "No valid rules in API response";
+            qDebug() << errorMsg;
+            QMessageBox::warning(this, "API Error", errorMsg);
+            emit remoteRulesLoadFailed(errorMsg);
         } else {
+            qDebug() << "Successfully loaded rules from API";
             emit remoteRulesLoaded();
         }
     });
