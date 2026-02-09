@@ -281,7 +281,8 @@ bool WatcherThread::isExcluded(const QString& filePath) const
                 return true;
             }
         } else {
-            if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
+            // Check for exact filename match, not just "ends with"
+            if (fileName.compare(trimmed, Qt::CaseInsensitive) == 0) {
                 return true;
             }
         }

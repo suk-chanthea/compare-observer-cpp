@@ -1311,9 +1311,9 @@ bool FileWatcherApp::isPathExcluded(const QString& absolutePath,
                 return true;
             }
         } else {
-            // Treat as file pattern - check if path ends with it
-        if (normalized.endsWith(trimmed, Qt::CaseInsensitive)) {
-            return true;
+            // Treat as file pattern - check for exact filename match
+            if (fileName.compare(trimmed, Qt::CaseInsensitive) == 0) {
+                return true;
             }
         }
     }
