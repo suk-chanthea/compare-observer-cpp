@@ -97,13 +97,18 @@ set(HEADERS
     src/ui/models/log_table_model.h
 )
 
+# Resources
+set(RESOURCES
+    resources/icons.qrc
+)
+
 # Determine if we should create a console or GUI application
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     # Debug: Console application for debugging
-    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${APP_ICON_RESOURCE})
+    add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS} ${RESOURCES} ${APP_ICON_RESOURCE})
 else()
     # Release: GUI application (no console)
-    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${APP_ICON_RESOURCE})
+    add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} ${RESOURCES} ${APP_ICON_RESOURCE})
 endif()
 
 # Link Qt libraries

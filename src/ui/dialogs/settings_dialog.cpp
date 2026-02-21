@@ -42,6 +42,19 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 
     m_tokenEdit->setEchoMode(QLineEdit::Password);
     m_apiUrlEdit->setPlaceholderText("http://khmergaming.436bet.com/app/log_sys.php");
+    m_notificationsCheckbox->setStyleSheet(
+        "QCheckBox { color: #E1E1E1; spacing: 8px; } "
+        "QCheckBox::indicator { "
+        "background-color: #2A2A2A; "
+        "border: 1px solid #4A4A4A; "
+        "border-radius: 3px; "
+        "width: 18px; "
+        "height: 18px; "
+        "} "
+        "QCheckBox::indicator:checked { "
+        "image: url(:/icons/checkmark.svg); "
+        "}"
+    );
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
