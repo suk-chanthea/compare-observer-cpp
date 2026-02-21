@@ -32,6 +32,8 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
 
     m_oldContentEdit->setReadOnly(true);
     m_newContentEdit->setReadOnly(true);
+    m_oldContentEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
+    m_newContentEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
     
     // Plain styling - dark theme
     QString plainTextStyle = 
@@ -88,11 +90,27 @@ FileDiffDialog::FileDiffDialog(QWidget* parent)
 
     connect(closeButton, &QPushButton::clicked, this, &QDialog::close);
     
-    // Setup synchronized scrolling
+    // Setup synchronized scrolling (vertical)
     connect(m_oldContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
             this, &FileDiffDialog::syncOldToNew);
     connect(m_newContentEdit->verticalScrollBar(), &QScrollBar::valueChanged, 
             this, &FileDiffDialog::syncNewToOld);
+
+    // Setup synchronized scrolling (horizontal)
+    connect(m_oldContentEdit->horizontalScrollBar(), &QScrollBar::valueChanged,
+            this, [this](int value) {
+                if (m_syncingScroll) return;
+                m_syncingScroll = true;
+                m_newContentEdit->horizontalScrollBar()->setValue(value);
+                m_syncingScroll = false;
+            });
+    connect(m_newContentEdit->horizontalScrollBar(), &QScrollBar::valueChanged,
+            this, [this](int value) {
+                if (m_syncingScroll) return;
+                m_syncingScroll = true;
+                m_oldContentEdit->horizontalScrollBar()->setValue(value);
+                m_syncingScroll = false;
+            });
     
     // Use configurable refresh interval
     int refreshInterval = AppConfig::instance().autoRefreshInterval();
